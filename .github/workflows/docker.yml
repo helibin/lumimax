@@ -32,6 +32,19 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Verify Docker build context (api + web)
+        run: |
+          set -eux
+          test -f api/turbo.json
+          test -f api/pnpm-lock.yaml
+          test -d api/apps
+          test -d api/scripts
+          test -f web/package.json
+          test -f web/pnpm-lock.yaml
+          test -d web/apps
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3

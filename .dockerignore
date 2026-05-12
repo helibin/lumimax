@@ -33,8 +33,9 @@ web/**/node_modules
 **/coverage
 **/playwright-report
 **/test-results
-**/tmp
-**/temp
+# 仅排除仓库根下 tmp/temp（与 .gitignore 的 tmp/、temp/ 对齐）。不用 **/tmp：** 在部分 BuildKit/路径组合下易误伤或引发异常校验。
+tmp
+temp
 
 # ===== 日志与临时 =====
 **/*.log

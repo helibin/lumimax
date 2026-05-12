@@ -1,0 +1,169 @@
+# ============================================================================
+# Lumimax 一体化栈（单业务镜像 + 依赖）
+# - 业务镜像 lumimax:latest：nginx + 3 个 NestJS 进程 + admin/www 静态
+# - 依赖：postgres / redis / rabbitmq / emqx
+# - 宿主机 HTTP_PORT → 容器内 nginx 80
+#
+# 用法：
+#   cp docker/.env.example .env
+#   docker compose -f compose.stack.yml up -d --build
+#   docker compose -f compose.stack.yml logs -f lumimax
+# ============================================================================
+
+services:
+  lumimax:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      args:
+        ADMIN_BASE: ${ADMIN_BASE:-/admin/}
+        WWW_BASE: ${WWW_BASE:-/}
+    image: lumimax:latest
+    container_name: lumimax
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      emqx:
+        condition: service_healthy
+    expose:
+      - 80
+    ports:
+      - '${LUMIMAX_HTTP_PORT:-8080}:80'
+    environment:
+      NODE_ENV: production
+      DB_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-lumimax}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET 必填且 >= 32 字符}
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-root}:${RABBITMQ_PASSWORD:-root}@rabbitmq:5672
+      REDIS_URL: redis://redis:6379
+      DEFAULT_TENANT_ID: ${DEFAULT_TENANT_ID:-tenant000000000000000}
+
+      BASE_SERVICE_GRPC_URL: 127.0.0.1:4120
+      BIZ_SERVICE_GRPC_URL: 127.0.0.1:4130
+
+      STORAGE_VENDOR: ${STORAGE_VENDOR:-aws}
+      STORAGE_REGION: ${STORAGE_REGION:-us-west-2}
+      STORAGE_BUCKET: ${STORAGE_BUCKET:-lumimax-dev}
+      STORAGE_PUBLIC_BASE_URL: ${STORAGE_PUBLIC_BASE_URL:-https://lumimax-dev.s3.us-west-2.amazonaws.com}
+      STORAGE_UPLOAD_TTL_SECONDS: ${STORAGE_UPLOAD_TTL_SECONDS:-900}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+
+      RABBITMQ_EVENTS_EXCHANGE: ${RABBITMQ_EVENTS_EXCHANGE:-app.events}
+      RABBITMQ_EVENTS_EXCHANGE_TYPE: ${RABBITMQ_EVENTS_EXCHANGE_TYPE:-topic}
+
+      IOT_VENDOR: ${IOT_VENDOR:-emqx}
+      EMQX_BROKER_URL: ${EMQX_BROKER_URL:-mqtt://emqx:1883}
+
+      DIET_VISION_PROVIDER: ${DIET_VISION_PROVIDER:-openai}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      DIET_NUTRITION_PROVIDER_ORDER: ${DIET_NUTRITION_PROVIDER_ORDER:-boohee,usda_fdc}
+
+      LUMIMAX_AUTO_MIGRATE: ${LUMIMAX_AUTO_MIGRATE:-false}
+    volumes:
+      - lumimax-logs:/app/logs
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - wget -qO- http://127.0.0.1:80/health -O /dev/null || exit 1
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - lumimax
+
+  postgres:
+    image: registry.cn-shenzhen.aliyuncs.com/ovlb/postgres:16.13-alpine
+    container_name: lumimax-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-lumimax}
+    expose:
+      - '5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-lumimax}']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - lumimax
+
+  redis:
+    image: registry.cn-shenzhen.aliyuncs.com/ovlb/redis:7.4.8-alpine
+    container_name: lumimax-redis
+    restart: unless-stopped
+    expose:
+      - '6379'
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - lumimax
+
+  rabbitmq:
+    image: registry.cn-shenzhen.aliyuncs.com/ovlb/rabbitmq-delayed:3.13.3-management
+    container_name: lumimax-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-root}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-root}
+    expose:
+      - '5672'
+      - '15672'
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ['CMD', 'rabbitmq-diagnostics', '-q', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - lumimax
+
+  emqx:
+    image: registry.cn-shenzhen.aliyuncs.com/ovlb/emqx.emqx-enterprise:5.8.6
+    container_name: lumimax-emqx
+    restart: unless-stopped
+    expose:
+      - '1883'
+      - '8083'
+      - '8084'
+      - '18083'
+    ports:
+      - '${EMQX_MQTT_PORT:-2883}:1883'
+      - '${EMQX_DASHBOARD_PORT:-28083}:18083'
+    volumes:
+      - emqx-data:/opt/emqx/data
+      - emqx-log:/opt/emqx/log
+    healthcheck:
+      test: ['CMD', '/opt/emqx/bin/emqx_ctl', 'status']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - lumimax
+
+volumes:
+  postgres-data:
+  redis-data:
+  rabbitmq-data:
+  emqx-data:
+  emqx-log:
+  lumimax-logs:
+
+networks:
+  lumimax:
+    name: ${LUMIMAX_NETWORK:-lumimax}

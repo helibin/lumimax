@@ -1,0 +1,65 @@
+# 通用
+.DS_Store
+*.log
+*.local
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.example.json
+!.vscode/launch.example.json
+
+# Node / pnpm
+node_modules/
+.pnpm-store/
+.pnpm-debug.log*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 构建产物
+dist/
+dist-ssr/
+build/
+out/
+.next/
+.nuxt/
+.cache/
+coverage/
+.turbo/
+*.tsbuildinfo
+
+# 测试 / 临时
+playwright-report/
+test-results/
+tmp/
+temp/
+.vitest-cache/
+
+# 环境变量（除 example 外都不提交）
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.env
+!*.env.example
+
+# 证书与密钥
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+.certs/
+
+# 容器 / 部署
+.dockerignore.local
+
+# 顶层日志输出
+/logs/
+
+# IDE
+.history/
+
+# AI 缓存
+.cursor/cache/
+.cursor/projects/

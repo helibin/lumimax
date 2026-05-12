@@ -1,0 +1,236 @@
+# Drone CI（自建 Drone Server + docker runner）
+# 与根目录 .github/workflows 行为对齐：api / web 校验 + 可选构建并推送 lumimax:latest。
+#
+# 可参考 api/.drone.yml 的优化点（本文件已对齐）：
+# - 关键步骤后增加飞书 webhook 成功/失败通知（需 Secret：FEISHU_WEBHOOK）
+# - publish 与通知之间用 depends_on 串起 DAG
+# - 若拉取 plugins/docker、plugins/webhook 较慢，可将 image 改为与 api/.drone.yml 相同的
+#   自建镜像（如 ccr.ccs.tencentyun.com/ovlb/plugins.docker）
+#
+# 镜像推送密钥见 docs/Drone-CI.md
+
+kind: pipeline
+type: docker
+name: ci-api
+
+platform:
+  os: linux
+  arch: amd64
+
+clone:
+  depth: 100
+
+trigger:
+  event:
+    - push
+    - pull_request
+  branch:
+    - main
+    - master
+    - develop
+
+steps:
+  - name: api
+    image: node:22-bookworm-slim
+    environment:
+      CI: "true"
+    commands:
+      - apt-get update -qq && apt-get install -y --no-install-recommends ca-certificates git && rm -rf /var/lib/apt/lists/*
+      - corepack enable && corepack prepare pnpm@10.16.0 --activate
+      - cd api && pnpm install --frozen-lockfile
+      - cd api && pnpm run arch:check
+      - cd api && pnpm run lint
+      - cd api && pnpm run build
+
+  - name: notify-feishu-success
+    image: plugins/webhook
+    failure: ignore
+    depends_on:
+      - api
+    settings:
+      urls:
+        from_secret: FEISHU_WEBHOOK
+      content_type: application/json
+      template: |
+        {
+          "msg_type": "text",
+          "content": {
+            "text": "✅ CI api 成功\n仓库：{{ repo.owner }}/{{ repo.name }}\n分支：{{ build.branch }}\n提交：{{ build.commit }}\n作者：{{ build.author }}\n流水线：{{ build.link }}"
+          }
+        }
+    when:
+      status:
+        - success
+
+  - name: notify-feishu-failure
+    image: plugins/webhook
+    failure: ignore
+    depends_on:
+      - api
+    settings:
+      urls:
+        from_secret: FEISHU_WEBHOOK
+      content_type: application/json
+      template: |
+        {
+          "msg_type": "text",
+          "content": {
+            "text": "❌ CI api 失败\n仓库：{{ repo.owner }}/{{ repo.name }}\n分支：{{ build.branch }}\n提交：{{ build.commit }}\n作者：{{ build.author }}\n流水线：{{ build.link }}"
+          }
+        }
+    when:
+      status:
+        - failure
+
+---
+kind: pipeline
+type: docker
+name: ci-web
+
+platform:
+  os: linux
+  arch: amd64
+
+clone:
+  depth: 100
+
+trigger:
+  event:
+    - push
+    - pull_request
+  branch:
+    - main
+    - master
+    - develop
+
+steps:
+  - name: web
+    image: node:22-bookworm-slim
+    environment:
+      CI: "true"
+    commands:
+      - apt-get update -qq && apt-get install -y --no-install-recommends ca-certificates git && rm -rf /var/lib/apt/lists/*
+      - corepack enable && corepack prepare pnpm@10.16.0 --activate
+      - cd web && pnpm install --frozen-lockfile
+      - cd web && pnpm run build:admin && pnpm run build:www
+
+  - name: notify-feishu-success
+    image: plugins/webhook
+    failure: ignore
+    depends_on:
+      - web
+    settings:
+      urls:
+        from_secret: FEISHU_WEBHOOK
+      content_type: application/json
+      template: |
+        {
+          "msg_type": "text",
+          "content": {
+            "text": "✅ CI web 成功\n仓库：{{ repo.owner }}/{{ repo.name }}\n分支：{{ build.branch }}\n提交：{{ build.commit }}\n作者：{{ build.author }}\n流水线：{{ build.link }}"
+          }
+        }
+    when:
+      status:
+        - success
+
+  - name: notify-feishu-failure
+    image: plugins/webhook
+    failure: ignore
+    depends_on:
+      - web
+    settings:
+      urls:
+        from_secret: FEISHU_WEBHOOK
+      content_type: application/json
+      template: |
+        {
+          "msg_type": "text",
+          "content": {
+            "text": "❌ CI web 失败\n仓库：{{ repo.owner }}/{{ repo.name }}\n分支：{{ build.branch }}\n提交：{{ build.commit }}\n作者：{{ build.author }}\n流水线：{{ build.link }}"
+          }
+        }
+    when:
+      status:
+        - failure
+
+---
+kind: pipeline
+type: docker
+name: docker-lumimax
+
+platform:
+  os: linux
+  arch: amd64
+
+clone:
+  depth: 100
+
+trigger:
+  event:
+    - push
+    - tag
+  ref:
+    include:
+      - refs/heads/main
+      - refs/heads/master
+      - refs/heads/develop
+      - refs/tags/v*
+
+steps:
+  - name: publish
+    image: plugins/docker
+    settings:
+      registry:
+        from_secret: docker_registry
+      repo:
+        from_secret: docker_repo
+      dockerfile: docker/Dockerfile
+      context: .
+      username:
+        from_secret: docker_username
+      password:
+        from_secret: docker_password
+      tags:
+        - latest
+      auto_tag: true
+
+  - name: notify-feishu-success
+    image: plugins/webhook
+    failure: ignore
+    depends_on:
+      - publish
+    settings:
+      urls:
+        from_secret: FEISHU_WEBHOOK
+      content_type: application/json
+      template: |
+        {
+          "msg_type": "text",
+          "content": {
+            "text": "✅ 镜像 lumimax 构建/推送成功\n仓库：{{ repo.owner }}/{{ repo.name }}\n分支：{{ build.branch }}\n提交：{{ build.commit }}\n作者：{{ build.author }}\n流水线：{{ build.link }}"
+          }
+        }
+    when:
+      status:
+        - success
+
+  - name: notify-feishu-failure
+    image: plugins/webhook
+    failure: ignore
+    depends_on:
+      - publish
+    settings:
+      urls:
+        from_secret: FEISHU_WEBHOOK
+      content_type: application/json
+      template: |
+        {
+          "msg_type": "text",
+          "content": {
+            "text": "❌ 镜像 lumimax 构建/推送失败\n仓库：{{ repo.owner }}/{{ repo.name }}\n分支：{{ build.branch }}\n提交：{{ build.commit }}\n作者：{{ build.author }}\n流水线：{{ build.link }}"
+          }
+        }
+    when:
+      status:
+        - failure

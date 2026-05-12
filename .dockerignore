@@ -1,0 +1,87 @@
+# 顶层 .dockerignore：用于 docker/Dockerfile（单镜像）构建
+# 仅传送 api/ 与 web/ 必要源码及顶层 docker 配置，其他通通忽略。
+
+# ===== 通用忽略 =====
+**/.DS_Store
+**/.git
+**/.gitignore
+**/.gitattributes
+**/.vscode
+**/.idea
+**/.history
+**/.turbo
+**/.cache
+**/.pnpm-store
+**/.cursor
+**/.changeset/CHANGELOG.md
+
+# ===== 构建产物 / 安装目录（一律不传给 builder，由镜像内重新构建） =====
+# Dockerfile 的 COPY 不能「排除子目录」，宿主机的 node_modules 只能靠此处不进构建上下文。
+# 下面多条重叠写法避免个别 Docker/路径歧义导致漏传。
+**/node_modules
+node_modules
+api/node_modules
+web/node_modules
+api/**/node_modules
+web/**/node_modules
+**/dist
+**/dist-ssr
+**/build
+**/out
+**/.next
+**/.nuxt
+**/coverage
+**/playwright-report
+**/test-results
+**/tmp
+**/temp
+
+# ===== 日志与临时 =====
+**/*.log
+**/logs
+**/npm-debug.log*
+**/pnpm-debug.log*
+**/yarn-debug.log*
+**/yarn-error.log*
+
+# ===== 环境与凭证（生产由 K8s/部署平台注入） =====
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.*.example
+**/*.pem
+**/*.key
+**/*.crt
+**/*.p12
+**/*.pfx
+**/.certs
+
+# ===== Docker 自身 =====
+**/Dockerfile.local
+**/compose.override.yml
+**/docker-compose.override.yml
+
+# ===== web：已从 workspace 移除，一体机构建不需要 =====
+web/docs
+web/playground
+
+# ===== web：测试与 E2E 不参与 SPA 构建（减小构建上下文） =====
+web/**/*.spec.ts
+web/**/*.spec.tsx
+web/**/__tests__
+web/**/e2e
+web/**/playwright-report
+
+# ===== api：单测不进 Docker 构建上下文 =====
+api/**/*.spec.ts
+
+# ===== 顶层不参与构建的目录 =====
+docs/codex-prompts*
+docs/img
+docs/cert
+docs/*.pdf
+
+# ===== zip / 打包产物 =====
+**/*.zip
+**/*.tar
+**/*.tar.gz

@@ -1,0 +1,7 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "../../dist/internal/contracts"
+  },
+  "include": ["src/**/*.ts", "proto/**/*.proto"]
+}

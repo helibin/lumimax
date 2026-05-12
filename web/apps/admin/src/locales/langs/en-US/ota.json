@@ -1,0 +1,23 @@
+{
+  "title": "OTA Management",
+  "manage": "Manage OTA",
+  "operation": "Operation",
+  "targetVersion": "Target Version",
+  "packageUrl": "Package URL",
+  "checksum": "Checksum",
+  "packageSizeBytes": "Package Size (Bytes)",
+  "forceUpgrade": "Force Upgrade",
+  "cancelLatest": "Cancel Latest Task",
+  "status": "Status",
+  "progress": "Progress",
+  "createdAt": "Created At",
+  "statusLabel": {
+    "pending": "Pending",
+    "accepted": "Accepted",
+    "downloading": "Downloading",
+    "installing": "Installing",
+    "success": "Success",
+    "failed": "Failed",
+    "canceled": "Canceled"
+  }
+}

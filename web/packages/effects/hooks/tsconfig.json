@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "@lumimax/tsconfig/web.json",
+  "compilerOptions": {
+    "types": ["vite/client", "@lumimax/types/global"]
+  },
+  "include": ["src"],
+  "exclude": ["node_modules"]
+}

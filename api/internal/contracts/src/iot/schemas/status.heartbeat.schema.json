@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lumimax/schemas/iot/status.heartbeat.schema.json",
+  "title": "status.heartbeat",
+  "type": "object",
+  "allOf": [
+    { "$ref": "envelope.schema.json" },
+    {
+      "properties": {
+        "meta": {
+          "properties": {
+            "event": { "const": "status.heartbeat" }
+          }
+        },
+        "data": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "status": { "type": "string", "enum": ["online"] }
+          }
+        }
+      }
+    }
+  ]
+}

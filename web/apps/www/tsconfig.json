@@ -1,0 +1,5 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "@lumimax/tsconfig/web-app.json",
+  "include": ["src/**/*.ts", "src/**/*.vue"]
+}

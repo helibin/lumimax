@@ -1,0 +1,19 @@
+{
+  "groupTitle": "营养业务",
+  "title": "称重记录",
+  "detail": "详情",
+  "operation": "操作",
+  "keyword": "关键词",
+  "recordId": "记录ID",
+  "deviceId": "设备ID",
+  "userId": "用户ID",
+  "tenantId": "租户ID",
+  "weight": "重量",
+  "unit": "单位",
+  "imageCount": "图片数",
+  "imageObjectIds": "图片对象",
+  "measuredAt": "测量时间",
+  "createdAt": "创建时间",
+  "analysisResult": "分析结果",
+  "rawPayload": "原始载荷"
+}

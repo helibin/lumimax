@@ -1,0 +1,13 @@
+{
+  "meta": {
+    "requestId": "550e8400e29b41d4a716446655440002",
+    "deviceId": "SN_12345",
+    "timestamp": 1710000001000,
+    "event": "connect.heartbeat",
+    "version": "1.0"
+  },
+  "data": {
+    "status": "online"
+  }
+}
+

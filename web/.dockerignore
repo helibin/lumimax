@@ -1,0 +1,16 @@
+node_modules
+.git
+.github
+.gitignore
+*.md
+dist
+.turbo
+dist.zip
+.cache
+coverage
+.DS_Store
+*.log
+pnpm-debug.log*
+docs
+playground
+apps/backend-mock

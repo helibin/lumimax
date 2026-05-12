@@ -1,0 +1,34 @@
+{
+  "name": "@lumimax/integration",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./grpc/gateway-grpc.util": {
+      "types": "./dist/grpc/gateway-grpc.util.d.ts",
+      "require": "./dist/grpc/gateway-grpc.util.js",
+      "default": "./dist/grpc/gateway-grpc.util.js"
+    },
+    "./grpc/facade-execute.util": {
+      "types": "./dist/grpc/facade-execute.util.d.ts",
+      "require": "./dist/grpc/facade-execute.util.js",
+      "default": "./dist/grpc/facade-execute.util.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && rm -rf dist && mkdir -p dist && cp -R ../../dist/internal/integration/. dist",
+    "dev": "pnpm run build",
+    "lint": "eslint src --ext .ts",
+    "clean": "rm -rf dist ../../dist/internal/integration"
+  },
+  "dependencies": {
+    "@lumimax/runtime": "workspace:*",
+    "@nestjs/common": "catalog:"
+  }
+}

@@ -1,0 +1,118 @@
+name: Docker Build Notify
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - '*'
+  workflow_dispatch:
+
+concurrency:
+  group: docker-build-notify-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve metadata
+        id: meta
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            echo "image_tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          else
+            echo "image_tag=latest" >> "$GITHUB_OUTPUT"
+          fi
+          echo "ref_name=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build gateway image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          load: true
+          tags: lumimax.api-gateway:${{ steps.meta.outputs.image_tag }}
+          build-args: |
+            APP_PKG=@lumimax/gateway
+            APP_DIR=gateway
+            APP_PORT=4000
+            APP_ENTRY=/app/dist/apps/gateway/src/main.js
+            APP_WORKDIR=/app/apps/gateway
+
+      - name: Build base-service image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          load: true
+          tags: lumimax.api-base:${{ steps.meta.outputs.image_tag }}
+          build-args: |
+            APP_PKG=@lumimax/base-service
+            APP_DIR=base-service
+            APP_PORT=4020
+            APP_ENTRY=/app/dist/apps/base-service/src/main.js
+            APP_WORKDIR=/app/apps/base-service
+
+      - name: Build biz-service image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          load: true
+          tags: lumimax.api-biz:${{ steps.meta.outputs.image_tag }}
+          build-args: |
+            APP_PKG=@lumimax/biz-service
+            APP_DIR=biz-service
+            APP_PORT=4030
+            APP_ENTRY=/app/dist/apps/biz-service/src/main.js
+            APP_WORKDIR=/app/apps/biz-service
+
+      - name: Send Feishu notification
+        if: always()
+        env:
+          FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
+          IMAGE_TAG: ${{ steps.meta.outputs.image_tag }}
+          REF_NAME: ${{ steps.meta.outputs.ref_name }}
+          REPO: ${{ github.repository }}
+          ACTOR: ${{ github.actor }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          JOB_STATUS: ${{ job.status }}
+        shell: bash
+        run: |
+          if [[ -z "${FEISHU_WEBHOOK}" ]]; then
+            echo "FEISHU_WEBHOOK is empty, skip notification"
+            exit 0
+          fi
+
+          status="SUCCESS"
+          icon="✅"
+          if [[ "${JOB_STATUS}" != "success" ]]; then
+            status="FAILURE"
+            icon="❌"
+          fi
+
+          text="${icon} API docker build ${status}\nrepo: ${REPO}\nref: ${REF_NAME}\ntag: ${IMAGE_TAG}\nauthor: ${ACTOR}\nrun: ${RUN_URL}"
+
+          cat <<EOF >/tmp/feishu.json
+          {
+            "msg_type": "text",
+            "content": {
+              "text": "${text}"
+            }
+          }
+          EOF
+
+          curl -fsS -X POST "${FEISHU_WEBHOOK}" \
+            -H 'Content-Type: application/json' \
+            --data @/tmp/feishu.json

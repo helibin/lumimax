@@ -1,0 +1,90 @@
+syntax = "proto3";
+
+package biz;
+
+service BizHealthService {
+  rpc Ping (BizPingRequest) returns (BizPingResponse);
+}
+
+service BizDeviceFacadeService {
+  rpc Execute (BizDeviceExecuteRequest) returns (BizGatewayReply);
+}
+
+service BizDietFacadeService {
+  rpc Execute (BizDietExecuteRequest) returns (BizGatewayReply);
+  rpc CallAdmin (BizDietAdminRequest) returns (BizJsonReply);
+}
+
+service BizIotFacadeService {
+  rpc IngestCloudMessage (BizIotIngestRequest) returns (BizIotIngestReply);
+  rpc CallAdminMessage (BizIotAdminRequest) returns (BizJsonReply);
+}
+
+message BizPingRequest {
+  string request_id = 1;
+}
+
+message BizPingResponse {
+  string service = 1;
+  string status = 2;
+}
+
+message BizDeviceExecuteRequest {
+  string operation = 1;
+  string params_json = 2;
+  string query_json = 3;
+  string body_json = 4;
+  string user_json = 5;
+  string tenant_scope = 6;
+  string request_id = 7;
+}
+
+message BizDietAdminRequest {
+  string request_id = 1;
+  string service = 2;
+  string method = 3;
+  string payload_json = 4;
+}
+
+message BizDietExecuteRequest {
+  string operation = 1;
+  string params_json = 2;
+  string query_json = 3;
+  string body_json = 4;
+  string user_json = 5;
+  string tenant_scope = 6;
+  string request_id = 7;
+}
+
+message BizIotIngestRequest {
+  string request_id = 1;
+  string vendor = 2;
+  string topic = 3;
+  string payload_json = 4;
+  int64 received_at = 5;
+}
+
+message BizIotIngestReply {
+  bool success = 1;
+  string message = 2;
+}
+
+message BizIotAdminRequest {
+  string request_id = 1;
+  string method = 2;
+  string payload_json = 3;
+}
+
+message BizJsonReply {
+  string json = 1;
+}
+
+message BizGatewayReply {
+  bool success = 1;
+  string data_json = 2;
+  string request_id = 3;
+  int32 http_status = 4;
+  int32 business_code = 5;
+  string message = 6;
+  string details_json = 7;
+}

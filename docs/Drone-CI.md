@@ -71,25 +71,22 @@
 
 ---
 
-## 7. GitHub Actions `docker.yml`：`api` / `web` 缺失、`COPY api/...` 失败
+## 7. GitHub Actions `docker.yml`：`api` / `web` 缺失、`COPY api/...` / `eslint.config.mjs` not found
 
-本仓库 **工程上不采用 Git submodule**；`api/`、`web/` 应为普通目录。若 GitHub 上某次提交里 **误把 `api` 登记成 Git submodule（gitlink）且 `.gitmodules` 无有效 url**，BuildKit 在拉 **Git 构建上下文** 时会默认执行 `git submodule update`，从而出现 `No url found for submodule path 'api'`——这是 **Git 元数据遗留**，不是业务上的 submodule 设计。
+本仓库 **工程上不采用 Git submodule**；`api/`、`web/` 应为普通目录。若 GitHub 上曾把 `api` **误记为 submodule（gitlink）**，会出现两类现象：
 
-### 当前流水线行为
+1. **Git 上下文 + 默认拉子模块**：`git submodule update` 报 `No url found for submodule path 'api'`。  
+2. **Git 上下文 + `?submodules=0`**：不拉子模块，父仓库里 **没有** `api/` 下的 blob → `COPY api/eslint.config.mjs` 等报 **not found**。
 
-根目录 [`.github/workflows/docker.yml`](../.github/workflows/docker.yml) 使用 **Git 上下文**，并在 URL 上增加 **`?submodules=0`**（BuildKit / Docker 文档中的 Git URL query），**不拉子模块**，以便在上述误登记情况下仍能检出父仓库树中的 `api/` 文件（若该提交里树对象本身仍包含 blob，而非仅空 gitlink）。
+因此 **`docker.yml` 已改为 `actions/checkout` + 路径上下文 `context: .`**，不再用带 `?submodules=0` 的 Git URL。构建前有一步 **Ensure api + web present**，若 `api/eslint.config.mjs` 缺失会打印 `git ls-tree HEAD api` 便于确认是否为 `160000`。
 
-**版本要求**：带 query 的 Git URL 需 **BuildKit ≥ v0.24** 与 **Dockerfile 前端 ≥ 1.18**。本仓库已通过 `setup-buildx-action` 的 `driver-opts: image=moby/buildkit:v0.24.0`，并将 [`docker/Dockerfile`](../docker/Dockerfile) 首行 syntax 升为 **`docker/dockerfile:1.18-labs`**（保留 `COPY --parents` 等 labs 能力）。若自建 runner 的 BuildKit 过旧，请升级或改用官方 `ubuntu-latest`。
-
-若仍失败，请在该 `sha` 上确认 **`api` 在 Git 树里是否为真实目录内容**；必要时在本地去掉错误的 submodule 记录后重新 push（见下）。
+[`docker/Dockerfile`](../docker/Dockerfile) 仍使用 **`# syntax=docker/dockerfile:1.18-labs`**（`COPY --parents` 等 labs 能力），与上述 CI 策略独立。
 
 ### 自检
 
-- GitHub 网页打开该 **`github.sha`**，确认根下存在 `api/`、`web/`。  
-- 本地：`git fetch && git checkout <sha>` 后检查 `api/turbo.json` 是否存在。
+- GitHub 网页打开该 **`github.sha`**，确认根下存在 `api/eslint.config.mjs` 等。  
+- 本地：`git fetch && git checkout <sha>` 后 `test -f api/eslint.config.mjs`。
 
-### 根治（去掉错误的 submodule 元数据）
+### 根治（若 `git ls-tree` 显示 api 为 160000）
 
-若 `git ls-tree <sha> api` 显示 **`160000`**，应在有完整源码的克隆中去掉 submodule 指针，把 `api/` 作为普通目录重新提交并 push（具体命令随历史而异，可先备份后咨询 `git rm --cached api` 等操作）。
-
-修复后，即使去掉 `?submodules=0` 也应能正常构建；保留 query 可作为防御。
+在有完整源码的克隆中去掉错误的 submodule 指针，把 `api/` 作为普通目录重新提交并 push（可先备份，再按团队规范执行 `git rm --cached api` 等操作后重新 `git add api`）。

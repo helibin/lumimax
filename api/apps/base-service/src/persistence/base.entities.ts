@@ -1,0 +1,53 @@
+import {
+  SystemAdminEntity,
+  SystemAdminRoleEntity,
+  SystemAuditLogEntity,
+  SystemConfigEntity,
+  SystemDictionaryEntity,
+  SystemDictionaryItemEntity,
+  SystemMenuEntity,
+  SystemPermissionEntity,
+  SystemRoleEntity,
+  SystemRoleMenuEntity,
+  SystemRolePermissionEntity,
+  StorageObjectEntity,
+} from '../modules/system/entities/system.entities';
+import {
+  DeviceTokenEntity,
+  NotificationMessageEntity,
+  NotificationTemplateEntity,
+} from '../modules/notification/notification.entities';
+import {
+  ConsentRecordEntity,
+  OtpCodeEntity,
+  PrivacyRequestEntity,
+  RefreshTokenEntity,
+  ThirdPartyIdentityEntity,
+  UserAuditLogEntity,
+  UserEntity,
+} from '../modules/user/user.entities';
+
+export const BASE_SERVICE_ENTITIES = [
+  UserEntity,
+  ThirdPartyIdentityEntity,
+  ConsentRecordEntity,
+  PrivacyRequestEntity,
+  UserAuditLogEntity,
+  RefreshTokenEntity,
+  OtpCodeEntity,
+  NotificationMessageEntity,
+  NotificationTemplateEntity,
+  DeviceTokenEntity,
+  SystemAdminEntity,
+  SystemAdminRoleEntity,
+  SystemRoleEntity,
+  SystemRolePermissionEntity,
+  SystemRoleMenuEntity,
+  SystemMenuEntity,
+  SystemPermissionEntity,
+  SystemDictionaryEntity,
+  SystemDictionaryItemEntity,
+  SystemConfigEntity,
+  SystemAuditLogEntity,
+  StorageObjectEntity,
+];

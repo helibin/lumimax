@@ -1,0 +1,15 @@
+{
+  "meta": {
+    "requestId": "550e8400e29b41d4a716446655440006",
+    "deviceId": "SN_12345",
+    "timestamp": 1710000005000,
+    "event": "cmd.ota.upgrade.progress",
+    "version": "1.0"
+  },
+  "data": {
+    "otaId": "01J1ABCDEFGH1234567890KLMN",
+    "progress": 35,
+    "stage": "downloading"
+  }
+}
+

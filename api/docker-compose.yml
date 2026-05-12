@@ -1,0 +1,186 @@
+# API + infra only. Paths are relative to the monorepo root (parent directory).
+#
+# From repo root:
+#   docker compose -f docker-compose.backend.yml up -d
+#
+# From ./api (wrapper):
+#   docker compose -f docker-compose.yml up -d
+
+include:
+  - path: docker-compose.api.yml
+
+# Backend only: Postgres, RabbitMQ, Redis, gateway, base-service, biz-service.
+# Used by repo-root stack via `include`, or directly:
+#   docker compose -f docker-compose.backend.yml --env-file .env up -d
+
+x-common-env: &common_env
+  NODE_ENV: ${NODE_ENV:-production}
+  JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+  RABBITMQ_URL: ${RABBITMQ_URL:-amqp://root:${RABBITMQ_PASSWORD:-rd}@rabbitmq:5672}
+  RABBITMQ_EVENTS_EXCHANGE: ${RABBITMQ_EVENTS_EXCHANGE:-app.events}
+  RABBITMQ_EVENTS_EXCHANGE_TYPE: ${RABBITMQ_EVENTS_EXCHANGE_TYPE:-topic}
+  REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+  DB_URL: ${DB_URL:-postgresql://postgres:${POSTGRES_PASSWORD:-rd}@postgres:5432/${POSTGRES_DB:-lumimax}}
+  DEFAULT_TENANT_ID: ${DEFAULT_TENANT_ID:-tenant000000000000000}
+
+services:
+  base-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        APP_PKG: '@lumimax/base-service'
+        APP_DIR: base-service
+        APP_PORT: '4020'
+        APP_ENTRY: /app/dist/apps/base-service/src/main.js
+        APP_WORKDIR: /app/apps/base-service
+    image: lumimax.api-base:latest
+    container_name: lumimax-base-service
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    expose:
+      - 4020
+      - 4120
+    environment:
+      <<: *common_env
+      SERVICE_NAME: base-service
+      HOST: 0.0.0.0
+      HTTP_PORT: 4020
+      GRPC_PORT: 4120
+      STORAGE_VENDOR: ${STORAGE_VENDOR:-aws}
+      STORAGE_BUCKET: ${STORAGE_BUCKET:?STORAGE_BUCKET is required}
+      STORAGE_REGION: ${STORAGE_REGION:-us-west-2}
+      STORAGE_PUBLIC_BASE_URL: ${STORAGE_PUBLIC_BASE_URL:?STORAGE_PUBLIC_BASE_URL is required}
+      STORAGE_UPLOAD_TTL_SECONDS: ${STORAGE_UPLOAD_TTL_SECONDS:-900}
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "require('http').get('http://127.0.0.1:4020/health',res=>process.exit(res.statusCode===200?0:1)).on('error',()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - lumimax
+
+  biz-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        APP_PKG: '@lumimax/biz-service'
+        APP_DIR: biz-service
+        APP_PORT: '4030'
+        APP_ENTRY: /app/dist/apps/biz-service/src/main.js
+        APP_WORKDIR: /app/apps/biz-service
+    image: lumimax.api-biz:latest
+    container_name: lumimax-biz-service
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      base-service:
+        condition: service_healthy
+    expose:
+      - 4030
+      - 4130
+    environment:
+      <<: *common_env
+      SERVICE_NAME: biz-service
+      HOST: 0.0.0.0
+      HTTP_PORT: 4030
+      GRPC_PORT: 4130
+      BASE_SERVICE_GRPC_ENDPOINT: base-service:4120
+      IOT_RECEIVE_MODE: ${IOT_RECEIVE_MODE:-queue}
+      IOT_VENDOR: ${IOT_VENDOR:-emqx}
+      IOT_QUEUE_URL: ${IOT_QUEUE_URL:-}
+      IOT_ENDPOINT: ${IOT_ENDPOINT:-}
+      IOT_ROOT_CA_PEM: ${IOT_ROOT_CA_PEM:-}
+      IOT_ROOT_CA_KEY_PEM: ${IOT_ROOT_CA_KEY_PEM:-}
+      IOT_MQTT_USERNAME: ${IOT_MQTT_USERNAME:-}
+      IOT_MQTT_PASSWORD: ${IOT_MQTT_PASSWORD:-}
+      IOT_MQTT_CLIENT_CERT_PEM: ${IOT_MQTT_CLIENT_CERT_PEM:-}
+      IOT_MQTT_CLIENT_KEY_PEM: ${IOT_MQTT_CLIENT_KEY_PEM:-}
+      IOT_QUEUE_WAIT_TIME_SECONDS: ${IOT_QUEUE_WAIT_TIME_SECONDS:-10}
+      IOT_QUEUE_VISIBILITY_TIMEOUT: ${IOT_QUEUE_VISIBILITY_TIMEOUT:-60}
+      IOT_QUEUE_BATCH_SIZE: ${IOT_QUEUE_BATCH_SIZE:-5}
+      IOT_QUEUE_IDLE_DELAY_MS: ${IOT_QUEUE_IDLE_DELAY_MS:-1000}
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "require('http').get('http://127.0.0.1:4030/health',res=>process.exit(res.statusCode===200?0:1)).on('error',()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - lumimax
+
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        APP_PKG: '@lumimax/gateway'
+        APP_DIR: gateway
+        APP_PORT: '4000'
+        APP_ENTRY: /app/dist/apps/gateway/src/main.js
+        APP_WORKDIR: /app/apps/gateway
+    image: lumimax.api-gateway:latest
+    container_name: lumimax-gateway
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      base-service:
+        condition: service_healthy
+      biz-service:
+        condition: service_healthy
+    expose:
+      - 4000
+    environment:
+      <<: *common_env
+      HOST: 0.0.0.0
+      HTTP_PORT: 4000
+      BASE_SERVICE_URL: http://base-service:4020
+      BASE_SERVICE_GRPC_ENDPOINT: base-service:4120
+      BIZ_SERVICE_URL: http://biz-service:4030
+      BIZ_SERVICE_GRPC_ENDPOINT: biz-service:4130
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "require('http').get('http://127.0.0.1:4000/health',res=>process.exit(res.statusCode===200?0:1)).on('error',()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - lumimax
+
+networks:
+  lumimax:
+    name: ${LUMIMAX_NETWORK:-lumimax}

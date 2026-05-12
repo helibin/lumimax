@@ -1,0 +1,25 @@
+{
+  "name": "@lumimax/validation",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && rm -rf dist && mkdir -p dist && cp -R ../../dist/packages/validation/. dist",
+    "dev": "pnpm run build",
+    "lint": "eslint src --ext .ts",
+    "clean": "rm -rf dist ../../dist/packages/validation"
+  },
+  "dependencies": {
+    "@nestjs/common": "catalog:",
+    "class-transformer": "catalog:",
+    "class-validator": "catalog:"
+  }
+}

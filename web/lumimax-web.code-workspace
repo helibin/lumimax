@@ -1,0 +1,152 @@
+{
+  "folders": [
+    {
+      "name": "@lumimax/admin",
+      "path": "apps/admin"
+    },
+    {
+      "name": "@lumimax/www",
+      "path": "apps/www"
+    },
+    {
+      "name": "@lumimax/commitlint-config",
+      "path": "internal/lint-configs/commitlint-config"
+    },
+    {
+      "name": "@lumimax/eslint-config",
+      "path": "internal/lint-configs/eslint-config"
+    },
+    {
+      "name": "@lumimax/stylelint-config",
+      "path": "internal/lint-configs/stylelint-config"
+    },
+    {
+      "name": "@lumimax/node-utils",
+      "path": "internal/node-utils"
+    },
+    {
+      "name": "@lumimax/tailwind-config",
+      "path": "internal/tailwind-config"
+    },
+    {
+      "name": "@lumimax/tsconfig",
+      "path": "internal/tsconfig"
+    },
+    {
+      "name": "@lumimax/vite-config",
+      "path": "internal/vite-config"
+    },
+    {
+      "name": "@lumimax-core/design",
+      "path": "packages/@core/base/design"
+    },
+    {
+      "name": "@lumimax-core/icons",
+      "path": "packages/@core/base/icons"
+    },
+    {
+      "name": "@lumimax-core/shared",
+      "path": "packages/@core/base/shared"
+    },
+    {
+      "name": "@lumimax-core/typings",
+      "path": "packages/@core/base/typings"
+    },
+    {
+      "name": "@lumimax-core/composables",
+      "path": "packages/@core/composables"
+    },
+    {
+      "name": "@lumimax-core/preferences",
+      "path": "packages/@core/preferences"
+    },
+    {
+      "name": "@lumimax-core/form-ui",
+      "path": "packages/@core/ui-kit/form-ui"
+    },
+    {
+      "name": "@lumimax-core/layout-ui",
+      "path": "packages/@core/ui-kit/layout-ui"
+    },
+    {
+      "name": "@lumimax-core/menu-ui",
+      "path": "packages/@core/ui-kit/menu-ui"
+    },
+    {
+      "name": "@lumimax-core/popup-ui",
+      "path": "packages/@core/ui-kit/popup-ui"
+    },
+    {
+      "name": "@lumimax-core/shadcn-ui",
+      "path": "packages/@core/ui-kit/shadcn-ui"
+    },
+    {
+      "name": "@lumimax-core/tabs-ui",
+      "path": "packages/@core/ui-kit/tabs-ui"
+    },
+    {
+      "name": "@lumimax/constants",
+      "path": "packages/constants"
+    },
+    {
+      "name": "@lumimax/access",
+      "path": "packages/effects/access"
+    },
+    {
+      "name": "@lumimax/common-ui",
+      "path": "packages/effects/common-ui"
+    },
+    {
+      "name": "@lumimax/hooks",
+      "path": "packages/effects/hooks"
+    },
+    {
+      "name": "@lumimax/layouts",
+      "path": "packages/effects/layouts"
+    },
+    {
+      "name": "@lumimax/plugins",
+      "path": "packages/effects/plugins"
+    },
+    {
+      "name": "@lumimax/request",
+      "path": "packages/effects/request"
+    },
+    {
+      "name": "@lumimax/icons",
+      "path": "packages/icons"
+    },
+    {
+      "name": "@lumimax/locales",
+      "path": "packages/locales"
+    },
+    {
+      "name": "@lumimax/preferences",
+      "path": "packages/preferences"
+    },
+    {
+      "name": "@lumimax/stores",
+      "path": "packages/stores"
+    },
+    {
+      "name": "@lumimax/styles",
+      "path": "packages/styles"
+    },
+    {
+      "name": "@lumimax/types",
+      "path": "packages/types"
+    },
+    {
+      "name": "@lumimax/utils",
+      "path": "packages/utils"
+    },
+    {
+      "name": "@lumimax/turbo-run",
+      "path": "scripts/turbo-run"
+    },
+    {
+      "name": "@lumimax/vsh",
+      "path": "scripts/vsh"
+    }
+  ]
+}

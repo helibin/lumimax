@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lumimax/schemas/iot/envelope.schema.json",
+  "title": "IoT Protocol v1 Envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["meta", "data"],
+  "properties": {
+    "meta": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["requestId", "deviceId", "timestamp", "event", "version"],
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 36
+        },
+        "deviceId": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "timestamp": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "event": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "locale": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 32
+        }
+      }
+    },
+    "data": {
+      "type": "object"
+    }
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "name": "@lumimax/layouts",
+  "version": "5.7.0",
+  "homepage": "https://github.com/vbenjs/vue-vben-admin",
+  "bugs": "https://github.com/vbenjs/vue-vben-admin/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vbenjs/vue-vben-admin.git",
+    "directory": "packages/effects/layouts"
+  },
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "dependencies": {
+    "@lumimax-core/composables": "workspace:*",
+    "@lumimax-core/design": "workspace:*",
+    "@lumimax-core/form-ui": "workspace:*",
+    "@lumimax-core/layout-ui": "workspace:*",
+    "@lumimax-core/menu-ui": "workspace:*",
+    "@lumimax-core/popup-ui": "workspace:*",
+    "@lumimax-core/shadcn-ui": "workspace:*",
+    "@lumimax-core/shared": "workspace:*",
+    "@lumimax-core/tabs-ui": "workspace:*",
+    "@lumimax/constants": "workspace:*",
+    "@lumimax/hooks": "workspace:*",
+    "@lumimax/icons": "workspace:*",
+    "@lumimax/locales": "workspace:*",
+    "@lumimax/preferences": "workspace:*",
+    "@lumimax/stores": "workspace:*",
+    "@lumimax/types": "workspace:*",
+    "@lumimax/utils": "workspace:*",
+    "@vueuse/core": "catalog:",
+    "vue": "catalog:",
+    "vue-router": "catalog:"
+  }
+}

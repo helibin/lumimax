@@ -1,0 +1,19 @@
+{
+  "groupTitle": "Nutrition",
+  "title": "Weighing Records",
+  "detail": "Detail",
+  "operation": "Operation",
+  "keyword": "Keyword",
+  "recordId": "Record ID",
+  "deviceId": "Device ID",
+  "userId": "User ID",
+  "tenantId": "Tenant ID",
+  "weight": "Weight",
+  "unit": "Unit",
+  "imageCount": "Images",
+  "imageObjectIds": "Image Objects",
+  "measuredAt": "Measured At",
+  "createdAt": "Created At",
+  "analysisResult": "Analysis Result",
+  "rawPayload": "Raw Payload"
+}

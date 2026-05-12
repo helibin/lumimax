@@ -1,0 +1,57 @@
+{
+  "name": "@lumimax/common-ui",
+  "version": "5.7.0",
+  "homepage": "https://github.com/vbenjs/vue-vben-admin",
+  "bugs": "https://github.com/vbenjs/vue-vben-admin/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vbenjs/vue-vben-admin.git",
+    "directory": "packages/effects/common-ui"
+  },
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./es/tippy": {
+      "types": "./src/components/tippy/index.ts",
+      "default": "./src/components/tippy/index.ts"
+    },
+    "./es/loading": {
+      "types": "./src/components/loading/index.ts",
+      "default": "./src/components/loading/index.ts"
+    }
+  },
+  "dependencies": {
+    "@lumimax-core/design": "workspace:*",
+    "@lumimax-core/form-ui": "workspace:*",
+    "@lumimax-core/popup-ui": "workspace:*",
+    "@lumimax-core/preferences": "workspace:*",
+    "@lumimax-core/shadcn-ui": "workspace:*",
+    "@lumimax-core/shared": "workspace:*",
+    "@lumimax/constants": "workspace:*",
+    "@lumimax/hooks": "workspace:*",
+    "@lumimax/icons": "workspace:*",
+    "@lumimax/locales": "workspace:*",
+    "@lumimax/types": "workspace:*",
+    "@vueuse/core": "catalog:",
+    "@vueuse/integrations": "catalog:",
+    "json-bigint": "catalog:",
+    "qrcode": "catalog:",
+    "tippy.js": "catalog:",
+    "vue": "catalog:",
+    "vue-json-viewer": "catalog:",
+    "vue-router": "catalog:",
+    "vue-tippy": "catalog:"
+  },
+  "devDependencies": {
+    "@types/json-bigint": "catalog:",
+    "@types/qrcode": "catalog:",
+    "@vue/test-utils": "catalog:"
+  }
+}

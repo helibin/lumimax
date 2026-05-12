@@ -1,0 +1,14 @@
+{
+  "meta": {
+    "requestId": "550e8400e29b41d4a716446655440001",
+    "deviceId": "SN_12345",
+    "timestamp": 1710000000000,
+    "event": "connect.register",
+    "version": "1.0"
+  },
+  "data": {
+    "firmwareVersion": "1.0.0",
+    "model": "smart-scale-v1"
+  }
+}
+

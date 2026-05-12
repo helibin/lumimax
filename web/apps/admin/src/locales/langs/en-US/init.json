@@ -1,0 +1,110 @@
+{
+  "setup": {
+    "title": "System Initialization",
+    "subtitle": "Welcome. Complete the following configuration to start using the system.",
+    "alreadyInitialized": "System is already initialized",
+    "loadFailed": "Failed to load initialization status",
+    "databaseStep": {
+      "title": "Database Check",
+      "description": "Verify database connection status",
+      "heading": "Database connection is ready",
+      "body": "The system can access {0} and is ready for initialization.",
+      "database": "Database",
+      "connectionStatus": "Connection status",
+      "existingAdmins": "Existing admins",
+      "lastInitialized": "Last initialized",
+      "seedStrategy": "Seed strategy",
+      "rebuildItems": "Rebuild items",
+      "ready": "Ready",
+      "unavailable": "Unavailable",
+      "notInitialized": "Not initialized",
+      "info": "The initialization flow will rebuild baseline system seed data and then replace the administrator account with the values you provide."
+    },
+    "adminStep": {
+      "title": "Admin Account",
+      "description": "Set administrator login information",
+      "heading": "Administrator account",
+      "body": "Set the primary administrator credentials used for the first login.",
+      "username": "Admin username",
+      "nickname": "Nickname",
+      "password": "Password",
+      "confirmPassword": "Confirm password",
+      "email": "Email",
+      "usernamePlaceholder": "admin",
+      "nicknamePlaceholder": "System administrator",
+      "passwordPlaceholder": "Please enter password",
+      "confirmPasswordPlaceholder": "Please confirm password",
+      "emailPlaceholder": "admin{'@'}example.com",
+      "warning": "Existing baseline administrator data will be regenerated and then overwritten with the credentials above during initialization."
+    },
+    "modeStep": {
+      "title": "Usage Mode",
+      "description": "Select system running mode",
+      "heading": "Usage mode",
+      "body": "Select how the system should be marked after initialization.",
+      "defaultTitle": "Default mode",
+      "defaultDesc": "Recommended for real deployment and regular backend usage.",
+      "demoTitle": "Demo mode",
+      "demoDesc": "Marks the environment as demonstration-oriented while still rebuilding baseline system data only.",
+      "defaultInfo": "Recommended for regular deployment. Rebuilds only baseline system data.",
+      "demoInfo": "Keeps system initialization minimal while marking the environment as demo."
+    },
+    "confirmStep": {
+      "title": "Complete Initialization",
+      "description": "Confirm settings and run initialization",
+      "heading": "Ready to complete initialization",
+      "body": "Confirm the following settings, then click \"Initialize system\" to start configuration.",
+      "summaryTitle": "Initialization summary",
+      "actionsTitle": "Initialization actions",
+      "scopeTitle": "Rebuilt data scope",
+      "warningsTitle": "Warnings"
+    },
+    "summary": {
+      "databaseType": "Database Type",
+      "seedStrategy": "Seed strategy",
+      "adminAccount": "Admin account",
+      "adminNickname": "Admin nickname",
+      "usageMode": "Usage mode",
+      "defaultMode": "Default mode",
+      "demoMode": "Demo mode"
+    },
+    "seedMode": {
+      "baseline-rebuild": "Baseline rebuild"
+    },
+    "confirmation": {
+      "applySeedMode": "Apply {0} for baseline system data only",
+      "setAdmin": "Set administrator username and password",
+      "persistFlag": "Persist initialization completion marker",
+      "excludeDemo": "Keep demo or business seed data excluded"
+    },
+    "scope": {
+      "notification_templates": "Notification templates",
+      "system_admin_roles": "Administrator role bindings",
+      "system_admins": "Administrator accounts",
+      "system_configs": "System configuration defaults",
+      "system_dictionaries": "System dictionaries",
+      "system_dictionary_items": "System dictionary items",
+      "system_menus": "System menus",
+      "system_permissions": "Permission definitions",
+      "system_role_menus": "Role menu grants",
+      "system_role_permissions": "Role permission grants",
+      "system_roles": "System roles"
+    },
+    "buttons": {
+      "retry": "Retry",
+      "previous": "Previous",
+      "next": "Next",
+      "initialize": "Initialize system"
+    },
+    "status": {
+      "warnings": "Warnings"
+    },
+    "messages": {
+      "databaseNotReady": "Initialization status is not ready yet. Confirm the database connection first.",
+      "passwordMismatch": "Passwords do not match",
+      "completeRequired": "Please complete the required information",
+      "initializeSuccess": "System initialization completed",
+      "initializeFailed": "System initialization failed"
+    }
+  }
+}

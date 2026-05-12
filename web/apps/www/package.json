@@ -1,0 +1,21 @@
+{
+  "name": "@lumimax/www",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build --mode production",
+    "dev": "vite --mode development",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "lucide-vue-next": "catalog:",
+    "qrcode": "catalog:",
+    "vue": "catalog:"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:"
+  }
+}

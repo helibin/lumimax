@@ -1,0 +1,110 @@
+{
+  "setup": {
+    "title": "系统初始化",
+    "subtitle": "欢迎使用，请完成以下配置后开始使用系统",
+    "alreadyInitialized": "系统已完成初始化",
+    "loadFailed": "初始化状态加载失败",
+    "databaseStep": {
+      "title": "数据库检查",
+      "description": "验证数据库连接状态",
+      "heading": "数据库连接已就绪",
+      "body": "系统已可访问 {0}，可以继续执行初始化。",
+      "database": "数据库",
+      "connectionStatus": "连接状态",
+      "existingAdmins": "已有管理员",
+      "lastInitialized": "上次初始化时间",
+      "seedStrategy": "种子策略",
+      "rebuildItems": "重建项数量",
+      "ready": "就绪",
+      "unavailable": "不可用",
+      "notInitialized": "尚未初始化",
+      "info": "初始化流程将重建基础系统种子数据，并使用你提供的信息覆盖管理员账号。"
+    },
+    "adminStep": {
+      "title": "管理员账号",
+      "description": "设置管理员登录信息",
+      "heading": "管理员账号",
+      "body": "设置首次登录使用的主管理员凭据。",
+      "username": "管理员账号",
+      "nickname": "昵称",
+      "password": "密码",
+      "confirmPassword": "确认密码",
+      "email": "邮箱",
+      "usernamePlaceholder": "admin",
+      "nicknamePlaceholder": "系统管理员",
+      "passwordPlaceholder": "请输入密码",
+      "confirmPasswordPlaceholder": "请再次输入密码",
+      "emailPlaceholder": "admin{'@'}example.com",
+      "warning": "现有基础管理员数据将在初始化过程中被重建，并最终由上方填写的凭据覆盖。"
+    },
+    "modeStep": {
+      "title": "运行模式",
+      "description": "选择系统运行模式",
+      "heading": "运行模式",
+      "body": "选择系统初始化后的运行标记方式。",
+      "defaultTitle": "默认模式",
+      "defaultDesc": "推荐用于正式部署和日常后台使用。",
+      "demoTitle": "演示模式",
+      "demoDesc": "将环境标记为演示用途，但仍只重建基础系统数据。",
+      "defaultInfo": "推荐用于常规部署，仅重建基础系统数据。",
+      "demoInfo": "以最小化方式完成系统初始化，并将当前环境标记为演示模式。"
+    },
+    "confirmStep": {
+      "title": "完成初始化",
+      "description": "确认设置并执行初始化",
+      "heading": "确认并完成初始化",
+      "body": "请确认以下配置，然后点击“初始化系统”开始写入配置。",
+      "summaryTitle": "初始化摘要",
+      "actionsTitle": "初始化动作",
+      "scopeTitle": "重建数据范围",
+      "warningsTitle": "注意事项"
+    },
+    "summary": {
+      "databaseType": "数据库类型",
+      "seedStrategy": "种子策略",
+      "adminAccount": "管理员账号",
+      "adminNickname": "管理员昵称",
+      "usageMode": "运行模式",
+      "defaultMode": "默认模式",
+      "demoMode": "演示模式"
+    },
+    "seedMode": {
+      "baseline-rebuild": "基础数据重建"
+    },
+    "confirmation": {
+      "applySeedMode": "执行 {0}，仅处理基础系统数据",
+      "setAdmin": "设置管理员用户名和密码",
+      "persistFlag": "写入初始化完成标记",
+      "excludeDemo": "不包含演示或业务种子数据"
+    },
+    "scope": {
+      "notification_templates": "通知模板",
+      "system_admin_roles": "管理员角色绑定",
+      "system_admins": "管理员账号",
+      "system_configs": "系统默认配置",
+      "system_dictionaries": "系统字典",
+      "system_dictionary_items": "系统字典项",
+      "system_menus": "系统菜单",
+      "system_permissions": "权限定义",
+      "system_role_menus": "角色菜单授权",
+      "system_role_permissions": "角色权限授权",
+      "system_roles": "系统角色"
+    },
+    "buttons": {
+      "retry": "重试",
+      "previous": "上一步",
+      "next": "下一步",
+      "initialize": "初始化系统"
+    },
+    "status": {
+      "warnings": "注意事项"
+    },
+    "messages": {
+      "databaseNotReady": "初始化状态尚未就绪，请先确认数据库连接正常",
+      "passwordMismatch": "两次输入的密码不一致",
+      "completeRequired": "请先填写必填信息",
+      "initializeSuccess": "系统初始化完成",
+      "initializeFailed": "系统初始化失败"
+    }
+  }
+}

@@ -1,0 +1,207 @@
+kind: pipeline
+type: docker
+name: lumimax-web-dev
+
+trigger:
+  branch:
+    - main
+  event:
+    - push
+
+steps:
+  - name: build-admin-image
+    image: ccr.ccs.tencentyun.com/ovlb/plugins.docker
+    settings:
+      registry: hub.vlb.cn
+      repo: hub.vlb.cn/work/lumimax.web-admin
+      dockerfile: Dockerfile
+      context: .
+      build_args:
+        - APP_NAME=admin
+      username:
+        from_secret: HARBOR_USERNAME
+      password:
+        from_secret: HARBOR_PASSWORD
+      tags:
+        - latest
+
+  - name: build-www-image
+    image: ccr.ccs.tencentyun.com/ovlb/plugins.docker
+    depends_on:
+      - build-admin-image
+    settings:
+      registry: hub.vlb.cn
+      repo: hub.vlb.cn/work/lumimax.web-www
+      dockerfile: Dockerfile
+      context: .
+      build_args:
+        - APP_NAME=www
+      username:
+        from_secret: HARBOR_USERNAME
+      password:
+        from_secret: HARBOR_PASSWORD
+      tags:
+        - latest
+
+  - name: deploy-dev
+    image: ccr.ccs.tencentyun.com/ovlb/alpine:3.19.1
+    depends_on:
+      - build-admin-image
+      - build-www-image
+    environment:
+      DEPLOY_DEV:
+        from_secret: DEPLOY_DEV
+      DEV_HOST:
+        from_secret: DEV_HOST
+      DEV_DEPLOY_PATH:
+        from_secret: DEV_DEPLOY_PATH
+      DEV_SSH_USER:
+        from_secret: DEV_SSH_USER
+      DEV_SSH_KEY:
+        from_secret: DEV_SSH_KEY
+      HARBOR_USERNAME:
+        from_secret: HARBOR_USERNAME
+      HARBOR_PASSWORD:
+        from_secret: HARBOR_PASSWORD
+    commands:
+      - apk add --no-cache openssh-client
+      - |
+        if [ "${DEPLOY_DEV:-}" != "true" ] || [ -z "${DEV_HOST:-}" ] || [ -z "${DEV_SSH_USER:-}" ] || [ -z "${DEV_SSH_KEY:-}" ]; then
+          echo "skip dev deploy: DEPLOY_DEV/DEV_HOST/DEV_SSH_USER/DEV_SSH_KEY not configured"
+          exit 0
+        fi
+      - mkdir -p ~/.ssh
+      - printf '%s\n' "$DEV_SSH_KEY" > ~/.ssh/id_ed25519
+      - chmod 600 ~/.ssh/id_ed25519
+      - |
+        ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no "$DEV_SSH_USER@$DEV_HOST" '
+          DEPLOY_PATH="'"${DEV_DEPLOY_PATH:-/data/docker/lumimax}"'" &&
+          cd "$DEPLOY_PATH" &&
+          echo "IMAGE_TAG=latest" > .image.env &&
+          docker login hub.vlb.cn -u "'"$HARBOR_USERNAME"'" -p "'"$HARBOR_PASSWORD"'" &&
+          docker compose -f docker-compose.web.yml --env-file .env --env-file .image.env pull &&
+          docker compose -f docker-compose.web.yml --env-file .env --env-file .image.env up -d &&
+          docker image prune -f
+        '
+
+  - name: notify-feishu-success
+    image: ccr.ccs.tencentyun.com/ovlb/plugins.webhook
+    depends_on:
+      - deploy-dev
+    settings:
+      urls:
+        from_secret: FEISHU_WEBHOOK
+      content_type: application/json
+      template: |
+        {
+          "msg_type": "text",
+          "content": {
+            "text": "✅ 部署成功\n仓库：{{ repo.owner }}/{{ repo.name }}\n分支：{{ build.branch }}\n提交：{{ build.commit }}\n作者：{{ build.author }}\n流水线：{{ build.link }}"
+          }
+        }
+    when:
+      status:
+        - success
+
+  - name: notify-dev-failure
+    image: ccr.ccs.tencentyun.com/ovlb/plugins.webhook
+    depends_on:
+      - build-admin-image
+      - build-www-image
+      - deploy-dev
+    settings:
+      urls:
+        from_secret: FEISHU_WEBHOOK
+      content_type: application/json
+      template: |
+        {
+          "msg_type": "text",
+          "content": {
+            "text": "❌ 部署失败\n仓库：{{ repo.owner }}/{{ repo.name }}\n分支：{{ build.branch }}\n提交：{{ build.commit }}\n作者：{{ build.author }}\n流水线：{{ build.link }}"
+          }
+        }
+    when:
+      status:
+        - failure
+
+---
+kind: pipeline
+type: docker
+name: lumimax-web-prod
+
+trigger:
+  event:
+    - tag
+
+steps:
+  - name: build-admin-image
+    image: ccr.ccs.tencentyun.com/ovlb/plugins.docker
+    settings:
+      registry: hub.vlb.cn
+      repo: hub.vlb.cn/work/lumimax.web-admin
+      dockerfile: Dockerfile
+      context: .
+      build_args:
+        - APP_NAME=admin
+      username:
+        from_secret: HARBOR_USERNAME
+      password:
+        from_secret: HARBOR_PASSWORD
+      tags:
+        - ${DRONE_TAG}
+
+  - name: build-www-image
+    image: ccr.ccs.tencentyun.com/ovlb/plugins.docker
+    settings:
+      registry: hub.vlb.cn
+      repo: hub.vlb.cn/work/lumimax.web-www
+      dockerfile: Dockerfile
+      context: .
+      build_args:
+        - APP_NAME=www
+      username:
+        from_secret: HARBOR_USERNAME
+      password:
+        from_secret: HARBOR_PASSWORD
+      tags:
+        - ${DRONE_TAG}
+
+  - name: notify-feishu-success
+    image: ccr.ccs.tencentyun.com/ovlb/plugins.webhook
+    depends_on:
+      - build-admin-image
+      - build-www-image
+    settings:
+      urls:
+        from_secret: FEISHU_WEBHOOK
+      content_type: application/json
+      template: |
+        {
+          "msg_type": "text",
+          "content": {
+            "text": "✅ 部署成功\n仓库：{{ repo.owner }}/{{ repo.name }}\n分支：{{ build.branch }}\n提交：{{ build.commit }}\n作者：{{ build.author }}\n流水线：{{ build.link }}"
+          }
+        }
+    when:
+      status:
+        - success
+
+  - name: notify-dev-failure
+    image: ccr.ccs.tencentyun.com/ovlb/plugins.webhook
+    depends_on:
+      - build-admin-image
+      - build-www-image
+    settings:
+      urls:
+        from_secret: FEISHU_WEBHOOK
+      content_type: application/json
+      template: |
+        {
+          "msg_type": "text",
+          "content": {
+            "text": "❌ 部署失败\n仓库：{{ repo.owner }}/{{ repo.name }}\n分支：{{ build.branch }}\n提交：{{ build.commit }}\n作者：{{ build.author }}\n流水线：{{ build.link }}"
+          }
+        }
+    when:
+      status:
+        - failure

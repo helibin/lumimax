@@ -1,0 +1,13 @@
+pnpm-lock.yaml
+.vscode/**
+**/dist/**
+**/node_modules/**
+**/.turbo/**
+**/.output/**
+**/.nitro/**
+**/.vitepress/cache/**
+**/coverage/**
+**/*.min.js
+**/*.snap
+.cache
+**/dist.zip

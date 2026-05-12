@@ -1,0 +1,83 @@
+<svg width="1600" height="1200" viewBox="0 0 1600 1200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1600" height="1200" fill="#041017"/>
+  <g filter="url(#shadow)">
+    <ellipse cx="800" cy="930" rx="390" ry="86" fill="url(#floorGlow)" fill-opacity="0.95"/>
+  </g>
+  <g opacity="0.9">
+    <path d="M335 292C391 234 506 190 643 183H1041C1176 190 1292 234 1348 292C1404 350 1424 430 1414 515L1351 797C1335 891 1247 957 1148 957H535C436 957 348 891 332 797L269 515C259 430 279 350 335 292Z" fill="url(#shell)"/>
+    <path d="M390 314C438 272 532 239 647 233H1037C1152 239 1246 272 1294 314C1340 354 1357 419 1347 493L1287 763C1272 838 1208 893 1132 893H552C476 893 412 838 397 763L337 493C327 419 344 354 390 314Z" fill="url(#surface)"/>
+    <path d="M465 360C500 329 568 307 653 302H1031C1116 307 1184 329 1219 360C1252 390 1264 437 1257 492L1212 692C1200 749 1151 790 1092 790H592C533 790 484 749 472 692L427 492C420 437 432 390 465 360Z" fill="url(#glass)"/>
+    <path d="M483 401C514 373 574 354 649 349H1035C1110 354 1170 373 1201 401C1230 427 1241 465 1235 510L1195 670C1185 719 1144 753 1093 753H591C540 753 499 719 489 670L449 510C443 465 454 427 483 401Z" fill="url(#screenGlow)"/>
+    <circle cx="800" cy="551" r="158" fill="url(#dialOuter)"/>
+    <circle cx="800" cy="551" r="132" fill="url(#dialInner)"/>
+    <circle cx="800" cy="551" r="106" fill="#07161D"/>
+    <path d="M713 547C713 502.265 749.265 466 794 466H806C850.735 466 887 502.265 887 547V555C887 599.735 850.735 636 806 636H794C749.265 636 713 599.735 713 555V547Z" fill="url(#displayPanel)"/>
+    <text x="800" y="534" text-anchor="middle" fill="#BDF2FF" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="600">LUMIMAX</text>
+    <text x="800" y="596" text-anchor="middle" fill="#F7FEFF" font-family="Inter, Arial, sans-serif" font-size="78" font-weight="700">58.6</text>
+    <text x="938" y="596" text-anchor="start" fill="#8DDAEE" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="600">kg</text>
+    <g opacity="0.88">
+      <circle cx="559" cy="422" r="10" fill="#B9F4FF"/>
+      <circle cx="1040" cy="422" r="10" fill="#B9F4FF"/>
+      <circle cx="515" cy="719" r="10" fill="#B9F4FF"/>
+      <circle cx="1084" cy="719" r="10" fill="#B9F4FF"/>
+    </g>
+    <path d="M612 813H987" stroke="url(#edgeLine)" stroke-width="10" stroke-linecap="round" opacity="0.52"/>
+  </g>
+  <g opacity="0.5">
+    <path d="M285 234C422 120 604 86 812 86C1020 86 1205 127 1325 232" stroke="url(#aura)" stroke-width="2"/>
+    <path d="M252 1007C432 1101 629 1146 804 1146C979 1146 1185 1106 1346 1006" stroke="url(#aura)" stroke-width="2"/>
+  </g>
+  <defs>
+    <filter id="shadow" x="330" y="804" width="940" height="252" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+      <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape"/>
+      <feGaussianBlur stdDeviation="40" result="effect1_foregroundBlur_16_4"/>
+    </filter>
+    <linearGradient id="shell" x1="800" y1="183" x2="800" y2="957" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#24404B"/>
+      <stop offset="0.58" stop-color="#11232C"/>
+      <stop offset="1" stop-color="#08151C"/>
+    </linearGradient>
+    <linearGradient id="surface" x1="800" y1="233" x2="800" y2="893" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2D515F"/>
+      <stop offset="0.54" stop-color="#142C36"/>
+      <stop offset="1" stop-color="#0B1920"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="560" y1="302" x2="1072" y2="826" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6AB5C9" stop-opacity="0.34"/>
+      <stop offset="0.45" stop-color="#143944" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#08181E" stop-opacity="0.6"/>
+    </linearGradient>
+    <linearGradient id="screenGlow" x1="454" y1="349" x2="1178" y2="780" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#9BE8FF" stop-opacity="0.22"/>
+      <stop offset="0.3" stop-color="#336878" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#0B1820" stop-opacity="0.1"/>
+    </linearGradient>
+    <radialGradient id="dialOuter" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(800 551) rotate(90) scale(158)">
+      <stop stop-color="#1C343F"/>
+      <stop offset="1" stop-color="#0B1A22"/>
+    </radialGradient>
+    <radialGradient id="dialInner" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(800 551) rotate(90) scale(132)">
+      <stop stop-color="#14313A"/>
+      <stop offset="1" stop-color="#09171E"/>
+    </radialGradient>
+    <linearGradient id="displayPanel" x1="800" y1="466" x2="800" y2="636" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#12313B"/>
+      <stop offset="1" stop-color="#09171D"/>
+    </linearGradient>
+    <radialGradient id="floorGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(800 930) rotate(90) scale(86 390)">
+      <stop stop-color="#2AAFD4" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#2AAFD4" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="edgeLine" x1="612" y1="818" x2="987" y2="818" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#B5F5FF" stop-opacity="0"/>
+      <stop offset="0.48" stop-color="#B5F5FF"/>
+      <stop offset="1" stop-color="#B5F5FF" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="aura" x1="285" y1="86" x2="1325" y2="1146" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8BDFF4" stop-opacity="0.02"/>
+      <stop offset="0.5" stop-color="#BFF7FF" stop-opacity="0.58"/>
+      <stop offset="1" stop-color="#8BDFF4" stop-opacity="0.02"/>
+    </linearGradient>
+  </defs>
+</svg>

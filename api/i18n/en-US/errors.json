@@ -1,0 +1,18 @@
+{
+  "ok": "Success",
+  "user.noauth": "Unauthorized, please sign in first",
+  "user.token_invalid": "Token is invalid or expired, please sign in again",
+  "auth.invalid_credentials": "Invalid username or password",
+  "user.not_registered": "User is not registered",
+  "user.disabled": "User status is abnormal and login is unavailable",
+  "request.invalid_params": "Invalid request parameters",
+  "request.validation_failed": "Request validation failed",
+  "user.forbidden": "Access to this resource is forbidden",
+  "resource.not_found": "Requested resource was not found",
+  "resource.conflict": "Resource conflict, avoid duplicate operation",
+  "request.unprocessable": "Request semantics are not processable",
+  "request.too_many": "Too many requests, please retry later",
+  "upstream.unavailable": "Upstream service is temporarily unavailable",
+  "upstream.timeout": "Upstream service timed out",
+  "system.internal_error": "System is busy, please retry later"
+}

@@ -1,0 +1,17 @@
+{
+  "name": "@lumimax/config",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && rm -rf dist && mkdir -p dist && cp -R ../../dist/internal/config/. dist",
+    "dev": "pnpm run build",
+    "lint": "eslint src --ext .ts",
+    "clean": "rm -rf dist ../../dist/internal/config"
+  },
+  "dependencies": {
+    "@nestjs/common": "catalog:",
+    "@nestjs/config": "catalog:"
+  }
+}

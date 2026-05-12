@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lumimax/schemas/iot/cmd.ota.upgrade.progress.schema.json",
+  "title": "cmd.ota.upgrade.progress",
+  "type": "object",
+  "allOf": [
+    { "$ref": "envelope.schema.json" },
+    {
+      "properties": {
+        "meta": {
+          "properties": {
+            "event": { "const": "cmd.ota.upgrade.progress" }
+          }
+        },
+        "data": {
+          "type": "object",
+          "required": ["otaId", "progress"],
+          "additionalProperties": true,
+          "properties": {
+            "otaId": { "type": "string", "minLength": 1 },
+            "progress": { "type": "integer", "minimum": 0, "maximum": 100 },
+            "stage": { "type": "string" }
+          }
+        }
+      }
+    }
+  ]
+}
+

@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lumimax/schemas/iot/upload.token.request.schema.json",
+  "title": "upload.token.request",
+  "type": "object",
+  "allOf": [
+    { "$ref": "envelope.schema.json" },
+    {
+      "properties": {
+        "meta": {
+          "properties": {
+            "event": { "const": "upload.token.request" }
+          }
+        },
+        "data": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "purpose": { "type": "string" },
+            "fileType": { "type": "string" },
+            "maxBytes": { "type": "integer", "minimum": 1 }
+          }
+        }
+      }
+    }
+  ]
+}

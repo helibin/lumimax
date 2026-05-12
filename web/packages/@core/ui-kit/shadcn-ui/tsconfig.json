@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "@lumimax/tsconfig/web.json",
+  "compilerOptions": {
+    "paths": {
+      "@lumimax-core/shadcn-ui/*": ["./src/*"]
+    }
+  },
+  "include": ["src"],
+  "exclude": ["node_modules"]
+}

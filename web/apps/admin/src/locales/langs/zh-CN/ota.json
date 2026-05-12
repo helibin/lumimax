@@ -1,0 +1,23 @@
+{
+  "title": "OTA管理",
+  "manage": "管理OTA",
+  "operation": "操作",
+  "targetVersion": "目标版本",
+  "packageUrl": "升级包地址",
+  "checksum": "校验值",
+  "packageSizeBytes": "包大小(字节)",
+  "forceUpgrade": "强制升级",
+  "cancelLatest": "取消最近任务",
+  "status": "状态",
+  "progress": "进度",
+  "createdAt": "创建时间",
+  "statusLabel": {
+    "pending": "待下发",
+    "accepted": "已接受",
+    "downloading": "下载中",
+    "installing": "安装中",
+    "success": "成功",
+    "failed": "失败",
+    "canceled": "已取消"
+  }
+}

@@ -1,0 +1,41 @@
+# Standalone frontends: build static assets and serve with nginx. Expects the API
+# on the host at port 4000 (override API_UPSTREAM). Not used by the repo-root stack.
+#
+# Full stack (API + DB + web): use ../docker-compose.yml from monorepo root.
+
+services:
+  admin:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        APP_NAME: admin
+    image: lumimax.web-admin:latest
+    container_name: lumimax-web-admin
+    ports:
+      - '${ADMIN_WEB_PORT:-8010}:8080'
+    environment:
+      API_UPSTREAM: '${API_UPSTREAM:-http://gateway:4000}'
+    restart: unless-stopped
+    networks:
+      - lumimax
+
+  www:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        APP_NAME: www
+    image: lumimax.web-www:latest
+    container_name: lumimax-web-www
+    ports:
+      - '${WWW_WEB_PORT:-8011}:8080'
+    environment:
+      API_UPSTREAM: '${API_UPSTREAM:-http://gateway:4000}'
+    restart: unless-stopped
+    networks:
+      - lumimax
+
+networks:
+  lumimax:
+    name: ${LUMIMAX_NETWORK:-lumimax}

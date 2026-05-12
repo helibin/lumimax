@@ -1,0 +1,96 @@
+name: Docker Build Notify
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - '*'
+  workflow_dispatch:
+
+concurrency:
+  group: docker-build-notify-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve metadata
+        id: meta
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            echo "image_tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          else
+            echo "image_tag=latest" >> "$GITHUB_OUTPUT"
+          fi
+          echo "ref_name=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build admin image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          load: true
+          tags: lumimax.web-admin:${{ steps.meta.outputs.image_tag }}
+          build-args: |
+            APP_NAME=admin
+
+      - name: Build www image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          load: true
+          tags: lumimax.web-www:${{ steps.meta.outputs.image_tag }}
+          build-args: |
+            APP_NAME=www
+
+      - name: Send Feishu notification
+        if: always()
+        env:
+          FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
+          IMAGE_TAG: ${{ steps.meta.outputs.image_tag }}
+          REF_NAME: ${{ steps.meta.outputs.ref_name }}
+          REPO: ${{ github.repository }}
+          ACTOR: ${{ github.actor }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          JOB_STATUS: ${{ job.status }}
+        shell: bash
+        run: |
+          if [[ -z "${FEISHU_WEBHOOK}" ]]; then
+            echo "FEISHU_WEBHOOK is empty, skip notification"
+            exit 0
+          fi
+
+          status="SUCCESS"
+          icon="✅"
+          if [[ "${JOB_STATUS}" != "success" ]]; then
+            status="FAILURE"
+            icon="❌"
+          fi
+
+          text="${icon} WEB docker build ${status}\nrepo: ${REPO}\nref: ${REF_NAME}\ntag: ${IMAGE_TAG}\nauthor: ${ACTOR}\nrun: ${RUN_URL}"
+
+          cat <<EOF >/tmp/feishu.json
+          {
+            "msg_type": "text",
+            "content": {
+              "text": "${text}"
+            }
+          }
+          EOF
+
+          curl -fsS -X POST "${FEISHU_WEBHOOK}" \
+            -H 'Content-Type: application/json' \
+            --data @/tmp/feishu.json

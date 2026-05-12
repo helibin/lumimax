@@ -1,0 +1,89 @@
+syntax = "proto3";
+
+package base;
+
+service BaseHealthService {
+  rpc Ping (BasePingRequest) returns (BasePingResponse);
+}
+
+service BaseSystemFacadeService {
+  rpc CallAdminSystem (BaseAdminSystemRequest) returns (BaseJsonReply);
+  rpc CallDictionary (BaseDictionaryRequest) returns (BaseJsonReply);
+}
+
+service BaseUserFacadeService {
+  rpc Execute (BaseUserExecuteRequest) returns (BaseGatewayReply);
+}
+
+service BaseNotificationFacadeService {
+  rpc Execute (BaseNotificationExecuteRequest) returns (BaseGatewayReply);
+}
+
+service BaseStorageFacadeService {
+  rpc Execute (BaseStorageExecuteRequest) returns (BaseGatewayReply);
+}
+
+message BasePingRequest {
+  string request_id = 1;
+}
+
+message BasePingResponse {
+  string service = 1;
+  string status = 2;
+}
+
+message BaseAdminSystemRequest {
+  string request_id = 1;
+  string service = 2;
+  string method = 3;
+  string payload_json = 4;
+}
+
+message BaseDictionaryRequest {
+  string request_id = 1;
+  string method = 2;
+  string payload_json = 3;
+}
+
+message BaseJsonReply {
+  string json = 1;
+}
+
+message BaseUserExecuteRequest {
+  string operation = 1;
+  string params_json = 2;
+  string query_json = 3;
+  string body_json = 4;
+  string user_json = 5;
+  string tenant_scope = 6;
+  string request_id = 7;
+}
+
+message BaseGatewayReply {
+  bool success = 1;
+  string data_json = 2;
+  string request_id = 3;
+  int32 http_status = 4;
+  int32 business_code = 5;
+  string message = 6;
+  string details_json = 7;
+}
+
+message BaseNotificationExecuteRequest {
+  string operation = 1;
+  string params_json = 2;
+  string query_json = 3;
+  string body_json = 4;
+  string tenant_scope = 5;
+  string request_id = 6;
+}
+
+message BaseStorageExecuteRequest {
+  string operation = 1;
+  string params_json = 2;
+  string query_json = 3;
+  string body_json = 4;
+  string user_json = 5;
+  string tenant_scope = 6;
+  string request_id = 7;
+}

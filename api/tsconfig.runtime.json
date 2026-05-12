@@ -1,0 +1,39 @@
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@lumimax/runtime": ["dist/packages/runtime/src"],
+      "@lumimax/runtime/*": ["dist/packages/runtime/src/*"],
+      "@lumimax/logger": ["dist/packages/logger/src"],
+      "@lumimax/logger/*": ["dist/packages/logger/src/*"],
+      "@lumimax/redis": ["dist/packages/redis/src"],
+      "@lumimax/redis/*": ["dist/packages/redis/src/*"],
+      "@lumimax/database": ["dist/packages/database/src"],
+      "@lumimax/database/*": ["dist/packages/database/src/*"],
+      "@lumimax/storage": ["dist/packages/storage/src"],
+      "@lumimax/storage/*": ["dist/packages/storage/src/*"],
+      "@lumimax/health": ["dist/packages/health/src"],
+      "@lumimax/health/*": ["dist/packages/health/src/*"],
+      "@lumimax/mq": ["dist/packages/mq/src"],
+      "@lumimax/mq/*": ["dist/packages/mq/src/*"],
+      "@lumimax/testing": ["dist/packages/testing/src"],
+      "@lumimax/testing/*": ["dist/packages/testing/src/*"],
+      "@lumimax/http-kit": ["dist/packages/http-kit/src"],
+      "@lumimax/http-kit/*": ["dist/packages/http-kit/src/*"],
+      "@lumimax/validation": ["dist/packages/validation/src"],
+      "@lumimax/validation/*": ["dist/packages/validation/src/*"],
+      "@lumimax/crypto-utils": ["dist/packages/crypto-utils/src"],
+      "@lumimax/crypto-utils/*": ["dist/packages/crypto-utils/src/*"],
+      "@lumimax/config": ["dist/internal/config/src"],
+      "@lumimax/config/*": ["dist/internal/config/src/*"],
+      "@lumimax/auth": ["dist/internal/auth/src"],
+      "@lumimax/auth/*": ["dist/internal/auth/src/*"],
+      "@lumimax/contracts": ["dist/internal/contracts/src"],
+      "@lumimax/contracts/*": ["dist/internal/contracts/src/*"],
+      "@lumimax/integration": ["dist/internal/integration/src"],
+      "@lumimax/integration/*": ["dist/internal/integration/src/*"],
+      "@lumimax/security": ["dist/internal/security/src"],
+      "@lumimax/security/*": ["dist/internal/security/src/*"]
+    }
+  }
+}

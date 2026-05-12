@@ -1,7 +1,6 @@
-# 构建 lumimax 单镜像并推送：GHCR + 自建 Harbor（hub.vlb.cn），结果飞书通知（可选）
+# 构建 lumimax 单镜像并仅推送到自建 Harbor（hub.vlb.cn），结果飞书通知（可选）
 #
 # Secrets（仓库 Settings → Secrets and variables → Actions）：
-#   GITHUB_TOKEN        — 默认即可写 GHCR（需开启 packages:write）
 #   HARBOR_USERNAME     — Harbor 登录用户（与 api Drone 一致时可复用）
 #   HARBOR_PASSWORD     — Harbor 登录密码 / robot token
 #   FEISHU_WEBHOOK      — 可选；飞书机器人 Webhook，未配置则跳过通知
@@ -21,10 +20,8 @@ concurrency:
 
 permissions:
   contents: read
-  packages: write
 
 env:
-  IMAGE_NAME: lumimax
   HARBOR_IMAGE: hub.vlb.cn/work/lumimax
 
 jobs:
@@ -36,12 +33,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: GHCR image (lowercase owner)
-        id: ghcr
-        run: |
-          owner_lc="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
-          echo "name=ghcr.io/${owner_lc}/${{ env.IMAGE_NAME }}" >> "$GITHUB_OUTPUT"
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -50,21 +41,12 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: |
-            ${{ steps.ghcr.outputs.name }}
             ${{ env.HARBOR_IMAGE }}
           tags: |
             type=ref,event=branch
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha
-
-      # - name: Login to GHCR
-      #   if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || startsWith(github.ref, 'refs/tags/')
-      #   uses: docker/login-action@v3
-      #   with:
-      #     registry: ghcr.io
-      #     username: ${{ github.actor }}
-      #     password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Login to Harbor (hub.vlb.cn)
         if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || startsWith(github.ref, 'refs/tags/')
@@ -100,7 +82,7 @@ jobs:
           分支/Ref: ${{ github.ref_name }}
           提交: ${{ github.sha }}
           作者: ${{ github.actor }}
-          镜像: ${{ steps.ghcr.outputs.name }} + ${{ env.HARBOR_IMAGE }}（tags 见 metadata）
+          镜像: ${{ env.HARBOR_IMAGE }}（tags 见 metadata）
           运行: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           jq -n --arg t "$text" '{msg_type:"text",content:{text:$t}}' | curl -fsS -X POST "$WEBHOOK" \
             -H 'Content-Type: application/json' \

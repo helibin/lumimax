@@ -56,10 +56,10 @@
 
 可以同时保留：
 
-- **GitHub Actions**：`.github/workflows/ci.yml`、`.github/workflows/docker.yml`（推 **GHCR** 与 **Harbor `hub.vlb.cn/work/lumimax`**，可选飞书 `FEISHU_WEBHOOK`）。
+- **GitHub Actions**：`.github/workflows/ci.yml`、`.github/workflows/docker.yml`（仅推 **Harbor `hub.vlb.cn/work/lumimax`**，可选飞书 `FEISHU_WEBHOOK`）。
 - **Drone**：`.drone.yml`（自建 runner、可推内网 Harbor 或同一 GHCR）。
 
-同一 `push` 可能 **各跑一套** CI/CD。若希望「GitHub 只做 PR 检查、镜像只走 Drone」，可在 GitHub 里关掉 `docker.yml` 的 `push` 触发，或只在 Drone 配 `docker-lumimax` 所需 secret、不在 GitHub 开 `packages:write`。
+同一 `push` 可能 **各跑一套** CI/CD。若希望「GitHub 只做 PR 检查、镜像只走 Drone」，可在 GitHub 里关掉 `docker.yml` 的 `push` 触发，或只在 Drone 配 `docker-lumimax` 所需 secret。
 
 ---
 

@@ -49,7 +49,7 @@ lumimax/
 | 系统 | 文件 | 说明 |
 | --- | --- | --- |
 | **GitHub Actions** | [`.github/workflows/ci.yml`](.github/workflows/ci.yml) | PR / `main` 等分支：并行跑 **api**（`arch:check` + `lint` + `build`）与 **web**（`build:admin` + `build:www`）。 |
-| **GitHub Actions** | [`.github/workflows/docker.yml`](.github/workflows/docker.yml) | 在 **默认分支** 或 **`v*` tag** 上构建 `docker/Dockerfile`，并同时推送到 **GHCR**（`ghcr.io/<owner 小写>/lumimax`）与 **Harbor**（`hub.vlb.cn/work/lumimax`，可在 workflow 里改 `HARBOR_IMAGE`）。需配置 `HARBOR_USERNAME` / `HARBOR_PASSWORD`；可选 `FEISHU_WEBHOOK` 用于成功/失败飞书通知。`GITHUB_TOKEN` 写 Packages 见 **Settings → Actions → General**。 |
+| **GitHub Actions** | [`.github/workflows/docker.yml`](.github/workflows/docker.yml) | 在 **默认分支** 或 **`v*` tag** 上构建 `docker/Dockerfile`，并**仅**推送到 **Harbor**（`hub.vlb.cn/work/lumimax`，可在 workflow 里改 `HARBOR_IMAGE`）。需配置 `HARBOR_USERNAME` / `HARBOR_PASSWORD`；可选 `FEISHU_WEBHOOK` 用于成功/失败飞书通知。 |
 | **自建 Drone** | [`.drone.yml`](.drone.yml) | `ci-api` / `ci-web` / `docker-lumimax`；可选飞书 `FEISHU_WEBHOOK`；镜像推送用 `plugins/docker` + 仓库 Secrets。说明见 [`docs/Drone-CI.md`](docs/Drone-CI.md)。 |
 
 GitHub 只识别仓库根下的 `.github/workflows/`。`api/.github/`、`web/.github/` 里的 workflow 在单仓根目录 **不会自动执行**；可迁到根 `.github/` 或改为被根 workflow 复用。

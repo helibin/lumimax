@@ -1,8 +1,9 @@
 # 构建 lumimax 单镜像并仅推送到自建 Harbor（hub.vlb.cn），结果飞书通知（可选）
 #
-# 本仓库 **无 Git submodule**：`api/`、`web/` 为普通目录，须已 push 到当前构建所用 `github.sha`。
-# 构建上下文：BuildKit **Git 上下文**（按 github.sha 从远端拉取），不依赖 runner 上
-# `actions/checkout` 后的工作区是否完整。
+# 本仓库工程上不采用 Git submodule；`api/`、`web/` 应为普通目录。
+# 若 GitHub 历史上曾把 `api` 误记为 submodule（无 url），BuildKit 拉 Git 上下文时会默认
+# `git submodule update` 并报错；context URL 已加 **?submodules=0**（见 Docker 文档 Git URL queries）。
+# 根治仍建议在仓库里去掉错误的 160000 记录，仅依赖 query 可临时绕过。
 #
 # Secrets：HARBOR_USERNAME / HARBOR_PASSWORD / FEISHU_WEBHOOK（可选）
 # 可变：env HARBOR_IMAGE（默认 hub.vlb.cn/work/lumimax）
@@ -31,9 +32,8 @@ jobs:
     environment: dev
 
     steps:
-      # 不使用 actions/checkout 作为 Docker 构建上下文：docker/build-push-action 默认
-      # 使用 Git 上下文，直接从 ${{ github.server_url }}/${{ github.repository }}.git#${{ github.sha }}
-      # 拉取与远端提交一致的树（含 .dockerignore），避免 runner 工作区异常/空目录导致 COPY 失败。
+      # Git 上下文 URL：`?submodules=0` 禁止 BuildKit 递归子模块（避免远端误登记 api 为 gitlink 且无 url 时失败）。
+      # ref 仍用 #<full_sha>；须为 40 位 commit（github.sha）。
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -61,7 +61,7 @@ jobs:
         id: build
         uses: docker/build-push-action@v6
         with:
-          context: ${{ github.server_url }}/${{ github.repository }}.git#${{ github.sha }}
+          context: ${{ format('{0}/{1}.git?submodules=0#{2}', github.server_url, github.repository, github.sha) }}
           file: docker/Dockerfile
           push: ${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || startsWith(github.ref, 'refs/tags/') }}
           tags: ${{ steps.meta.outputs.tags }}

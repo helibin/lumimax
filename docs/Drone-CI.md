@@ -73,21 +73,21 @@
 
 ## 7. GitHub Actions `docker.yml`：`api` / `web` 缺失、`COPY api/...` 失败
 
-本仓库 **不使用 Git submodule**；`api/`、`web/` 均为普通目录，应完整出现在默认分支的提交树中。
+本仓库 **工程上不采用 Git submodule**；`api/`、`web/` 应为普通目录。若 GitHub 上某次提交里 **误把 `api` 登记成 Git submodule（gitlink）且 `.gitmodules` 无有效 url**，BuildKit 在拉 **Git 构建上下文** 时会默认执行 `git submodule update`，从而出现 `No url found for submodule path 'api'`——这是 **Git 元数据遗留**，不是业务上的 submodule 设计。
 
 ### 当前流水线行为
 
-根目录 [`.github/workflows/docker.yml`](../.github/workflows/docker.yml) 使用 **`docker/build-push-action` 的 Git 上下文**：按 **`${{ github.server_url }}/${{ github.repository }}.git#${{ github.sha }}`** 让 BuildKit **直接从 GitHub 拉该提交下的树**，**不依赖** runner 上 `actions/checkout` 后的工作区是否完整。
+根目录 [`.github/workflows/docker.yml`](../.github/workflows/docker.yml) 使用 **Git 上下文**，并在 URL 上增加 **`?submodules=0`**（BuildKit / Docker 文档中的 Git URL query），**不拉子模块**，以便在上述误登记情况下仍能检出父仓库树中的 `api/` 文件（若该提交里树对象本身仍包含 blob，而非仅空 gitlink）。
 
-若 **Git 上下文构建仍失败**，说明 **该 `sha` 在 GitHub 上的树里没有完整 `api/` + `web/`**（常见：未 push、推到了别的 remote/分支、或 CI 跑的仓库/提交不是你以为的那份）。
+若仍失败，请在该 `sha` 上确认 **`api` 在 Git 树里是否为真实目录内容**；必要时在本地去掉错误的 submodule 记录后重新 push（见下）。
 
 ### 自检
 
-- 在 GitHub 网页打开 **该次 workflow 的 `github.sha`** → 浏览仓库根下是否能看到 `api/turbo.json`、`web/package.json` 等。  
-- 本地：`git fetch && git checkout <sha> && test -f api/turbo.json && test -f web/package.json`（与 CI 使用同一提交）。
+- GitHub 网页打开该 **`github.sha`**，确认根下存在 `api/`、`web/`。  
+- 本地：`git fetch && git checkout <sha>` 后检查 `api/turbo.json` 是否存在。
 
-### 处理
+### 根治（去掉错误的 submodule 元数据）
 
-把本地完整的 **`api/`、`web/`、`docker/`** 等 monorepo 内容 **commit 并 push 到触发构建的分支**；确认 **Actions 跑在正确的 GitHub 仓库**（fork 与 upstream 不要混用错 remote）。
+若 `git ls-tree <sha> api` 显示 **`160000`**，应在有完整源码的克隆中去掉 submodule 指针，把 `api/` 作为普通目录重新提交并 push（具体命令随历史而异，可先备份后咨询 `git rm --cached api` 等操作）。
 
-修复后重新 push，Docker 构建应能通过。
+修复后，即使去掉 `?submodules=0` 也应能正常构建；保留 query 可作为防御。

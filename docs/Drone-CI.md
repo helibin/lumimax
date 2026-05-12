@@ -68,3 +68,45 @@
 - **按路径跳过 job**：可用 Drone 条件表达式或拆 pipeline；本仓库默认全量跑，与当前 GitHub `ci.yml` 一致。
 - **Promote 才推生产镜像**：另建一条 pipeline，`trigger: event: promote`，用 `DRONE_DEPLOY_TO` 等区分环境。
 - **缓存 pnpm**：在 runner 上挂 host volume，在 `.drone.yml` 里为 `ci-*` steps 增加 `volumes`（视 Drone / runner 版本配置）。
+
+---
+
+## 7. GitHub Actions `docker.yml`：`api/turbo.json` / `COPY api/...` 失败
+
+这是 **Git 仓库形态** 问题，不是改 YAML 能「猜」出来的；流水线只负责在失败时把证据打全。
+
+### 典型原因
+
+1. **`api` 被记成 submodule（gitlink，mode `160000`）**，但 **`.gitmodules` 里没有合法 `url`**，或从未 `submodule update` → checkout 后 `api/` 为空或缺文件。  
+2. **`api/` 从未推上当前分支**（只在本机有、远端没有 `turbo.json` 等）。
+
+### 在 runner 日志里自检
+
+- `git ls-tree HEAD api`：若第二列为 **`160000`**，说明 `api` 是 submodule 指针。  
+- 有 `.gitmodules` 却无 `[submodule "api"]` + `url = ...` → 与「`submodule update` 报 No url found for submodule path 'api'」同一类问题。
+
+### 推荐修复（把 `api` 变回普通目录后 push）
+
+在**有完整 `api/` 源码**的克隆里执行（路径按你仓库调整；执行前请备份）：
+
+```bash
+git fetch origin
+git checkout <你的默认分支>
+git ls-tree HEAD api
+
+# 若 api 为 160000：去掉 submodule 记录（不会自动从远端拉回子模块内容）
+git submodule deinit -f api 2>/dev/null || true
+git rm -f api
+rm -rf .git/modules/api
+
+# 将完整 api/ 目录重新加入版本库（从备份目录拷回，或从已知完好的 clone 复制）
+# cp -R /path/to/good/api ./api
+git add api
+git status
+git commit -m "fix(git): track api/ as normal tree (remove broken submodule)"
+git push origin HEAD
+```
+
+若你**本意**就是子模块：在仓库根补全 **`.gitmodules`** 里 `api` 的 `url`，并在 CI 里使用 `actions/checkout` 的 **`submodules: recursive`**（且 URL 可匿名拉取或配 token）。
+
+修复并 push 后，GitHub 上该分支应能直接看到 `api/turbo.json`；`docker.yml` 里的断言与后续 `docker build` 才会通过。

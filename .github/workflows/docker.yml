@@ -33,16 +33,47 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Verify Docker build context (api + web)
+      # 单镜像构建要求仓库根下存在完整 api/ + web/（与 Dockerfile COPY 一致）。
+      # 若此处失败：99% 是 Git 把 api 记成 submodule（160000）但未配置 url，或 api 未 push；见 docs/Drone-CI.md §7。
+      - name: Assert monorepo layout (Docker context)
+        shell: bash
         run: |
-          set -eux
-          test -f api/turbo.json
-          test -f api/pnpm-lock.yaml
-          test -d api/apps
-          test -d api/scripts
-          test -f web/package.json
-          test -f web/pnpm-lock.yaml
-          test -d web/apps
+          set -euo pipefail
+          cd "${GITHUB_WORKSPACE}"
+          missing=0
+          need() {
+            if [[ ! -e "$1" ]]; then
+              echo "::error::Missing required path for Docker build: $1"
+              missing=$((missing + 1))
+            fi
+          }
+          need api/turbo.json
+          need api/pnpm-lock.yaml
+          need api/apps
+          need api/scripts
+          need web/package.json
+          need web/pnpm-lock.yaml
+          need web/apps
+          if [[ "${missing}" -eq 0 ]]; then
+            echo "Monorepo layout OK (api + web present)."
+            exit 0
+          fi
+          echo "::group::Diagnostics (why files are missing)"
+          echo "PWD=$(pwd)"
+          ls -la
+          echo "---- api (first 30 entries) ----"
+          if [[ -d api ]]; then ls -la api | head -30; else echo "(no api directory)"; fi
+          echo "---- web (first 20 entries) ----"
+          if [[ -d web ]]; then ls -la web | head -20; else echo "(no web directory)"; fi
+          echo "---- git ls-tree HEAD api ----"
+          git ls-tree HEAD api || true
+          echo "---- .gitmodules ----"
+          if [[ -f .gitmodules ]]; then cat .gitmodules; else echo "(no .gitmodules)"; fi
+          echo "---- git submodule status ----"
+          git submodule status 2>&1 || true
+          echo "::endgroup::"
+          echo "::error::Fix the Git repository (not the workflow): ensure api/ and web/ exist as normal tracked trees on this branch. If git ls-tree shows mode 160000 for api, remove the broken submodule and recommit api as files — see docs/Drone-CI.md section 7."
+          exit 1
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3

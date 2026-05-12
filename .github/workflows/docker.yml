@@ -1,11 +1,11 @@
 # 构建 lumimax 单镜像并仅推送到自建 Harbor（hub.vlb.cn），结果飞书通知（可选）
 #
-# Secrets（仓库 Settings → Secrets and variables → Actions）：
-#   HARBOR_USERNAME     — Harbor 登录用户（与 api Drone 一致时可复用）
-#   HARBOR_PASSWORD     — Harbor 登录密码 / robot token
-#   FEISHU_WEBHOOK      — 可选；飞书机器人 Webhook，未配置则跳过通知
+# 本仓库 **无 Git submodule**：`api/`、`web/` 为普通目录，须已 push 到当前构建所用 `github.sha`。
+# 构建上下文：BuildKit **Git 上下文**（按 github.sha 从远端拉取），不依赖 runner 上
+# `actions/checkout` 后的工作区是否完整。
 #
-# 如需修改 Harbor 上的完整路径，改下方 env HARBOR_IMAGE（默认 hub.vlb.cn/work/lumimax）。
+# Secrets：HARBOR_USERNAME / HARBOR_PASSWORD / FEISHU_WEBHOOK（可选）
+# 可变：env HARBOR_IMAGE（默认 hub.vlb.cn/work/lumimax）
 name: Docker Lumimax
 
 on:
@@ -31,50 +31,9 @@ jobs:
     environment: dev
 
     steps:
-      - uses: actions/checkout@v4
-
-      # 单镜像构建要求仓库根下存在完整 api/ + web/（与 Dockerfile COPY 一致）。
-      # 若此处失败：99% 是 Git 把 api 记成 submodule（160000）但未配置 url，或 api 未 push；见 docs/Drone-CI.md §7。
-      - name: Assert monorepo layout (Docker context)
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd "${GITHUB_WORKSPACE}"
-          missing=0
-          need() {
-            if [[ ! -e "$1" ]]; then
-              echo "::error::Missing required path for Docker build: $1"
-              missing=$((missing + 1))
-            fi
-          }
-          need api/turbo.json
-          need api/pnpm-lock.yaml
-          need api/apps
-          need api/scripts
-          need web/package.json
-          need web/pnpm-lock.yaml
-          need web/apps
-          if [[ "${missing}" -eq 0 ]]; then
-            echo "Monorepo layout OK (api + web present)."
-            exit 0
-          fi
-          echo "::group::Diagnostics (why files are missing)"
-          echo "PWD=$(pwd)"
-          ls -la
-          echo "---- api (first 30 entries) ----"
-          if [[ -d api ]]; then ls -la api | head -30; else echo "(no api directory)"; fi
-          echo "---- web (first 20 entries) ----"
-          if [[ -d web ]]; then ls -la web | head -20; else echo "(no web directory)"; fi
-          echo "---- git ls-tree HEAD api ----"
-          git ls-tree HEAD api || true
-          echo "---- .gitmodules ----"
-          if [[ -f .gitmodules ]]; then cat .gitmodules; else echo "(no .gitmodules)"; fi
-          echo "---- git submodule status ----"
-          git submodule status 2>&1 || true
-          echo "::endgroup::"
-          echo "::error::Fix the Git repository (not the workflow): ensure api/ and web/ exist as normal tracked trees on this branch. If git ls-tree shows mode 160000 for api, remove the broken submodule and recommit api as files — see docs/Drone-CI.md section 7."
-          exit 1
-
+      # 不使用 actions/checkout 作为 Docker 构建上下文：docker/build-push-action 默认
+      # 使用 Git 上下文，直接从 ${{ github.server_url }}/${{ github.repository }}.git#${{ github.sha }}
+      # 拉取与远端提交一致的树（含 .dockerignore），避免 runner 工作区异常/空目录导致 COPY 失败。
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -102,11 +61,12 @@ jobs:
         id: build
         uses: docker/build-push-action@v6
         with:
-          context: .
+          context: ${{ github.server_url }}/${{ github.repository }}.git#${{ github.sha }}
           file: docker/Dockerfile
           push: ${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || startsWith(github.ref, 'refs/tags/') }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

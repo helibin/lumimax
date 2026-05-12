@@ -71,42 +71,23 @@
 
 ---
 
-## 7. GitHub Actions `docker.yml`：`api/turbo.json` / `COPY api/...` 失败
+## 7. GitHub Actions `docker.yml`：`api` / `web` 缺失、`COPY api/...` 失败
 
-这是 **Git 仓库形态** 问题，不是改 YAML 能「猜」出来的；流水线只负责在失败时把证据打全。
+本仓库 **不使用 Git submodule**；`api/`、`web/` 均为普通目录，应完整出现在默认分支的提交树中。
 
-### 典型原因
+### 当前流水线行为
 
-1. **`api` 被记成 submodule（gitlink，mode `160000`）**，但 **`.gitmodules` 里没有合法 `url`**，或从未 `submodule update` → checkout 后 `api/` 为空或缺文件。  
-2. **`api/` 从未推上当前分支**（只在本机有、远端没有 `turbo.json` 等）。
+根目录 [`.github/workflows/docker.yml`](../.github/workflows/docker.yml) 使用 **`docker/build-push-action` 的 Git 上下文**：按 **`${{ github.server_url }}/${{ github.repository }}.git#${{ github.sha }}`** 让 BuildKit **直接从 GitHub 拉该提交下的树**，**不依赖** runner 上 `actions/checkout` 后的工作区是否完整。
 
-### 在 runner 日志里自检
+若 **Git 上下文构建仍失败**，说明 **该 `sha` 在 GitHub 上的树里没有完整 `api/` + `web/`**（常见：未 push、推到了别的 remote/分支、或 CI 跑的仓库/提交不是你以为的那份）。
 
-- `git ls-tree HEAD api`：若第二列为 **`160000`**，说明 `api` 是 submodule 指针。  
-- 有 `.gitmodules` 却无 `[submodule "api"]` + `url = ...` → 与「`submodule update` 报 No url found for submodule path 'api'」同一类问题。
+### 自检
 
-### 推荐修复（把 `api` 变回普通目录后 push）
+- 在 GitHub 网页打开 **该次 workflow 的 `github.sha`** → 浏览仓库根下是否能看到 `api/turbo.json`、`web/package.json` 等。  
+- 本地：`git fetch && git checkout <sha> && test -f api/turbo.json && test -f web/package.json`（与 CI 使用同一提交）。
 
-在**有完整 `api/` 源码**的克隆里执行（路径按你仓库调整；执行前请备份）：
+### 处理
 
-```bash
-git fetch origin
-git checkout <你的默认分支>
-git ls-tree HEAD api
+把本地完整的 **`api/`、`web/`、`docker/`** 等 monorepo 内容 **commit 并 push 到触发构建的分支**；确认 **Actions 跑在正确的 GitHub 仓库**（fork 与 upstream 不要混用错 remote）。
 
-# 若 api 为 160000：去掉 submodule 记录（不会自动从远端拉回子模块内容）
-git submodule deinit -f api 2>/dev/null || true
-git rm -f api
-rm -rf .git/modules/api
-
-# 将完整 api/ 目录重新加入版本库（从备份目录拷回，或从已知完好的 clone 复制）
-# cp -R /path/to/good/api ./api
-git add api
-git status
-git commit -m "fix(git): track api/ as normal tree (remove broken submodule)"
-git push origin HEAD
-```
-
-若你**本意**就是子模块：在仓库根补全 **`.gitmodules`** 里 `api` 的 `url`，并在 CI 里使用 `actions/checkout` 的 **`submodules: recursive`**（且 URL 可匿名拉取或配 token）。
-
-修复并 push 后，GitHub 上该分支应能直接看到 `api/turbo.json`；`docker.yml` 里的断言与后续 `docker build` 才会通过。
+修复后重新 push，Docker 构建应能通过。

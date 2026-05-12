@@ -48,7 +48,7 @@ make docker-build
 
 镜像体积仍主要来自 **`node_modules` + pnpm store**；上述步骤在**不破坏 pnpm 链接**的前提下尽量压缩可 COPY 的源码与 store 冗余。
 
-**Dockerfile 前置**：`docker/Dockerfile` 首行 `# syntax=docker/dockerfile:1.7-labs`，依赖 BuildKit 的 **`COPY --parents`**：用通配符一次性拷入 `api/apps/*/package.json`、`api/internal/*/package.json`、`api/packages/*/package.json`，避免逐包 `COPY`。新增 workspace 包时请落在上述**单层目录**下（与当前 `pnpm-workspace.yaml` 一致）；若将来出现 **`packages/foo/bar`** 这类深层包，需在 Dockerfile 里为该路径增加一段 glob 或改为显式 `COPY`。
+**Dockerfile 前置**：`docker/Dockerfile` 首行 `# syntax=docker/dockerfile:1.18-labs`，依赖 BuildKit 的 **`COPY --parents`**：用通配符一次性拷入 `api/apps/*/package.json`、`api/internal/*/package.json`、`api/packages/*/package.json`，避免逐包 `COPY`。新增 workspace 包时请落在上述**单层目录**下（与当前 `pnpm-workspace.yaml` 一致）；若将来出现 **`packages/foo/bar`** 这类深层包，需在 Dockerfile 里为该路径增加一段 glob 或改为显式 `COPY`。
 
 ---
 

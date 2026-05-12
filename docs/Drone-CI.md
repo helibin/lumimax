@@ -79,6 +79,8 @@
 
 根目录 [`.github/workflows/docker.yml`](../.github/workflows/docker.yml) 使用 **Git 上下文**，并在 URL 上增加 **`?submodules=0`**（BuildKit / Docker 文档中的 Git URL query），**不拉子模块**，以便在上述误登记情况下仍能检出父仓库树中的 `api/` 文件（若该提交里树对象本身仍包含 blob，而非仅空 gitlink）。
 
+**版本要求**：带 query 的 Git URL 需 **BuildKit ≥ v0.24** 与 **Dockerfile 前端 ≥ 1.18**。本仓库已通过 `setup-buildx-action` 的 `driver-opts: image=moby/buildkit:v0.24.0`，并将 [`docker/Dockerfile`](../docker/Dockerfile) 首行 syntax 升为 **`docker/dockerfile:1.18-labs`**（保留 `COPY --parents` 等 labs 能力）。若自建 runner 的 BuildKit 过旧，请升级或改用官方 `ubuntu-latest`。
+
 若仍失败，请在该 `sha` 上确认 **`api` 在 Git 树里是否为真实目录内容**；必要时在本地去掉错误的 submodule 记录后重新 push（见下）。
 
 ### 自检

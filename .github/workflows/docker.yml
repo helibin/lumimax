@@ -1,17 +1,12 @@
 # 构建 lumimax 单镜像并仅推送到自建 Harbor（hub.vlb.cn），结果飞书通知（可选）
 #
-# 使用 **actions/checkout + 路径上下文（context: .）**。
-# 原因：若远端曾把 `api` 误记为 Git submodule（gitlink），Git 上下文加 `?submodules=0` 会跳过子模块拉取，
-# 导致 **api/ 下没有任何 blob**（COPY api/eslint.config.mjs 等会报 not found）。路径上下文以 checkout
-# 后的工作区为准；若 api 仍是空 gitlink，需在仓库中把 api 改为普通目录并 push。
-#
 # Secrets：HARBOR_USERNAME / HARBOR_PASSWORD / FEISHU_WEBHOOK（可选）
 # 可变：env HARBOR_IMAGE（默认 hub.vlb.cn/work/lumimax）
 name: Docker Lumimax
 
 on:
   push:
-    branches: [main, master, develop]
+    branches: [main, master]
     tags: ['v*']
   workflow_dispatch:
 
@@ -37,28 +32,6 @@ jobs:
           fetch-depth: 1
           clean: true
 
-      # 若 api 仍是未展开的 submodule gitlink，checkout 后 api/ 为空或缺文件；在此失败并给出说明，避免 Docker 里才报 checksum。
-      - name: Ensure api + web present (real tree, not empty gitlink)
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd "${GITHUB_WORKSPACE}"
-          if [[ ! -f api/eslint.config.mjs ]]; then
-            echo "::group::Diagnostics"
-            echo "PWD=$(pwd)"
-            ls -la
-            echo "---- api ----"
-            ls -la api 2>&1 || true
-            echo "---- git ls-tree HEAD api ----"
-            git ls-tree HEAD api 2>&1 || true
-            echo "::endgroup::"
-            echo "::error::Missing api/eslint.config.mjs. If api/ is empty, Git may still treat 'api' as a submodule (gitlink) on this commit — do not use Git context with ?submodules=0 (it skips submodule fetch and leaves no files). Fix the repo: commit api/ as normal files, then re-run."
-            exit 1
-          fi
-          test -f api/turbo.json
-          test -f web/package.json
-          test -d web/apps
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -70,6 +43,7 @@ jobs:
             ${{ env.HARBOR_IMAGE }}
           tags: |
             type=ref,event=branch
+            type=raw,value=latest,enable={{is_default_branch}}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha

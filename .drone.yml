@@ -5,7 +5,7 @@
 # - 关键步骤后增加飞书 webhook 成功/失败通知（需 Secret：FEISHU_WEBHOOK）
 # - publish 与通知之间用 depends_on 串起 DAG
 # - 若拉取 plugins/docker、plugins/webhook 较慢，可将 image 改为与 api/.drone.yml 相同的
-#   自建镜像（如 ccr.ccs.tencentyun.com/ovlb/plugins.docker）
+#   自建镜像（如 cregistry.cn-shenzhen.aliyuncs.com/ovlb/plugins.docker）
 #
 # 镜像推送密钥见 docs/Drone-CI.md
 
@@ -27,11 +27,10 @@ trigger:
   branch:
     - main
     - master
-    - develop
 
 steps:
   - name: api
-    image: node:22-bookworm-slim
+    image: registry.cn-shenzhen.aliyuncs.com/ovlb/node:22-bookworm-slim
     environment:
       CI: "true"
     commands:
@@ -43,7 +42,7 @@ steps:
       - cd api && pnpm run build
 
   - name: notify-feishu-success
-    image: plugins/webhook
+    image: registry.cn-shenzhen.aliyuncs.com/ovlb/plugins.webhook
     failure: ignore
     depends_on:
       - api
@@ -63,7 +62,7 @@ steps:
         - success
 
   - name: notify-feishu-failure
-    image: plugins/webhook
+    image: registry.cn-shenzhen.aliyuncs.com/ovlb/plugins/webhook
     failure: ignore
     depends_on:
       - api
@@ -105,7 +104,7 @@ trigger:
 
 steps:
   - name: web
-    image: node:22-bookworm-slim
+    image: registry.cn-shenzhen.aliyuncs.com/ovlb/node:22-bookworm-slim
     environment:
       CI: "true"
     commands:
@@ -115,7 +114,7 @@ steps:
       - cd web && pnpm run build:admin && pnpm run build:www
 
   - name: notify-feishu-success
-    image: plugins/webhook
+    image: registry.cn-shenzhen.aliyuncs.com/ovlb/plugins/webhook
     failure: ignore
     depends_on:
       - web
@@ -135,7 +134,7 @@ steps:
         - success
 
   - name: notify-feishu-failure
-    image: plugins/webhook
+    image: registry.cn-shenzhen.aliyuncs.com/ovlb/plugins/webhook
     failure: ignore
     depends_on:
       - web
@@ -179,7 +178,7 @@ trigger:
 
 steps:
   - name: publish
-    image: plugins/docker
+    image: registry.cn-shenzhen.aliyuncs.com/ovlb/plugins.docker
     settings:
       registry:
         from_secret: docker_registry
@@ -196,7 +195,7 @@ steps:
       auto_tag: true
 
   - name: notify-feishu-success
-    image: plugins/webhook
+    image: registry.cn-shenzhen.aliyuncs.com/ovlb/plugins/webhook
     failure: ignore
     depends_on:
       - publish
@@ -216,7 +215,7 @@ steps:
         - success
 
   - name: notify-feishu-failure
-    image: plugins/webhook
+    image: registry.cn-shenzhen.aliyuncs.com/ovlb/plugins/webhook
     failure: ignore
     depends_on:
       - publish

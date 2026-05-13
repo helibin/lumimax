@@ -1,10 +1,10 @@
-# syntax=docker/dockerfile:1.7
+# syntax=docker.m.daocloud.io/docker/dockerfile:1.7
 #
 # Multi-app static build: pass APP_NAME=admin | www (matches apps/<name>).
 # API_UPSTREAM is rendered explicitly at container startup.
 
-ARG NODE_IMAGE=registry.cn-shenzhen.aliyuncs.com/ovlb/node:22-alpine
-ARG NGINX_IMAGE=registry.cn-shenzhen.aliyuncs.com/ovlb/nginx:1.23.3-alpine
+ARG NODE_IMAGE=ccr.ccs.tencentyun.com/ovlb/node:22-alpine
+ARG NGINX_IMAGE=ccr.ccs.tencentyun.com/ovlb/nginx:1.23.3-alpine
 
 FROM ${NODE_IMAGE} AS builder
 

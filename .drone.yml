@@ -4,8 +4,8 @@
 # 可参考 api/.drone.yml 的优化点（本文件已对齐）：
 # - 关键步骤后增加飞书 webhook 成功/失败通知（需 Secret：FEISHU_WEBHOOK）
 # - publish 与通知之间用 depends_on 串起 DAG
-# - 若拉取 plugins/docker、plugins/webhook 较慢，可将 image 改为与 api/.drone.yml 相同的
-#   自建镜像（如 cregistry.cn-shenzhen.aliyuncs.com/ovlb/plugins.docker）
+# - 若拉取 plugins/docker、plugins.webhook 较慢，可将 image 改为与 api/.drone.yml 相同的
+#   自建镜像（如 cccr.ccs.tencentyun.com/ovlb/plugins.docker）
 #
 # 镜像推送密钥见 docs/Drone-CI.md
 
@@ -30,7 +30,7 @@ trigger:
 
 steps:
   - name: api
-    image: registry.cn-shenzhen.aliyuncs.com/ovlb/node:22-bookworm-slim
+    image: ccr.ccs.tencentyun.com/ovlb/node:22-alpine
     environment:
       CI: "true"
     commands:
@@ -42,7 +42,7 @@ steps:
       - cd api && pnpm run build
 
   - name: notify-feishu-success
-    image: registry.cn-shenzhen.aliyuncs.com/ovlb/plugins.webhook
+    image: ccr.ccs.tencentyun.com/ovlb/plugins.webhook
     failure: ignore
     depends_on:
       - api
@@ -62,7 +62,7 @@ steps:
         - success
 
   - name: notify-feishu-failure
-    image: registry.cn-shenzhen.aliyuncs.com/ovlb/plugins/webhook
+    image: ccr.ccs.tencentyun.com/ovlb/plugins.webhook
     failure: ignore
     depends_on:
       - api
@@ -104,7 +104,7 @@ trigger:
 
 steps:
   - name: web
-    image: registry.cn-shenzhen.aliyuncs.com/ovlb/node:22-bookworm-slim
+    image: ccr.ccs.tencentyun.com/ovlb/node:22-alpine
     environment:
       CI: "true"
     commands:
@@ -114,7 +114,7 @@ steps:
       - cd web && pnpm run build:admin && pnpm run build:www
 
   - name: notify-feishu-success
-    image: registry.cn-shenzhen.aliyuncs.com/ovlb/plugins/webhook
+    image: ccr.ccs.tencentyun.com/ovlb/plugins.webhook
     failure: ignore
     depends_on:
       - web
@@ -134,7 +134,7 @@ steps:
         - success
 
   - name: notify-feishu-failure
-    image: registry.cn-shenzhen.aliyuncs.com/ovlb/plugins/webhook
+    image: ccr.ccs.tencentyun.com/ovlb/plugins.webhook
     failure: ignore
     depends_on:
       - web
@@ -178,24 +178,22 @@ trigger:
 
 steps:
   - name: publish
-    image: registry.cn-shenzhen.aliyuncs.com/ovlb/plugins.docker
+    image: ccr.ccs.tencentyun.com/ovlb/plugins.docker
     settings:
-      registry:
-        from_secret: docker_registry
-      repo:
-        from_secret: docker_repo
+      registry: hub.vlb.cn
+      repo: hub.vlb.cn/work/lumimax
       dockerfile: docker/Dockerfile
       context: .
       username:
-        from_secret: docker_username
+        from_secret: HARBOR_USERNAME
       password:
-        from_secret: docker_password
+        from_secret: HARBOR_PASSWORD
       tags:
         - latest
       auto_tag: true
 
   - name: notify-feishu-success
-    image: registry.cn-shenzhen.aliyuncs.com/ovlb/plugins/webhook
+    image: ccr.ccs.tencentyun.com/ovlb/plugins.webhook
     failure: ignore
     depends_on:
       - publish
@@ -215,7 +213,7 @@ steps:
         - success
 
   - name: notify-feishu-failure
-    image: registry.cn-shenzhen.aliyuncs.com/ovlb/plugins/webhook
+    image: ccr.ccs.tencentyun.com/ovlb/plugins.webhook
     failure: ignore
     depends_on:
       - publish

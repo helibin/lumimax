@@ -24,6 +24,19 @@
 2. 在 Drone UI 中 **Activate** 本仓库，Drone 会读根目录 **`.drone.yml`**。
 3. 默认 **amd64**；若 runner 只有 arm64，请把各 pipeline 里的 `platform.arch` 改为 `arm64`（或拆多架构 pipeline）。
 
+### Drone `plugins.docker` / `registry-1.docker.io` 超时
+
+日志里 **`Get "https://registry-1.docker.io/v2/" ... Client.Timeout`** 多半是 BuildKit 在解析 Dockerfile 首行 **`# syntax=docker/dockerfile:...`** 时，要从 **Docker Hub** 拉取 **Dockerfile 前端镜像**（与 `FROM` 是否用自建镜像无关）。
+
+本仓库已将 **`api/Dockerfile`**、**`web/Dockerfile`**、**`docker/Dockerfile`** 的 syntax 改为经 **DaoCloud 镜像代理** 拉取，例如：
+
+`# syntax=docker.m.daocloud.io/docker/dockerfile:1.7` / `1.18-labs`
+
+若你环境 **DaoCloud 也不可达**，可任选其一：
+
+- 在 **Drone runner 宿主机** `/etc/docker/daemon.json` 配置 **`registry-mirrors`**（如阿里云、腾讯云、USTC 等提供的 Docker Hub 加速），并 `systemctl restart docker`；或  
+- 把 **`docker/dockerfile`**（含 `*-labs` tag）同步到 **Harbor `hub.vlb.cn`**，再把各 Dockerfile 首行 syntax 改成你们内网地址。
+
 ---
 
 ## 3. 飞书通知 Secret（可选但默认已接线）
@@ -80,7 +93,7 @@
 
 因此 **`docker.yml` 已改为 `actions/checkout` + 路径上下文 `context: .`**，不再用带 `?submodules=0` 的 Git URL。构建前有一步 **Ensure api + web present**，若 `api/eslint.config.mjs` 缺失会打印 `git ls-tree HEAD api` 便于确认是否为 `160000`。
 
-[`docker/Dockerfile`](../docker/Dockerfile) 仍使用 **`# syntax=docker/dockerfile:1.18-labs`**（`COPY --parents` 等 labs 能力），与上述 CI 策略独立。
+[`docker/Dockerfile`](../docker/Dockerfile) 使用 **`# syntax=docker.m.daocloud.io/docker/dockerfile:1.18-labs`**（`COPY --parents` 等 labs 能力），与上述 CI 策略独立。
 
 ### 自检
 

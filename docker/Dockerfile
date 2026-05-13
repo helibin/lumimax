@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.18-labs
+# syntax=docker.m.daocloud.io/docker/dockerfile:1.18-labs
 #
 # Lumimax 单镜像（nginx + 3 个 NestJS + admin/www 静态）
 # - 把 gateway / base-service / biz-service + admin SPA + www SPA + nginx 打进同一镜像，由 supervisord 守护。
@@ -37,7 +37,8 @@ RUN corepack enable \
  && pnpm config set store-dir /pnpm/store
 
 # manifest 缓存层：只拷 workspace 根配置 + 各子包 package.json（不写死每个路径）。
-# 使用 COPY --parents + 通配符（需 BuildKit、syntax=1.18-labs）；WORKDIR=/workspace，产物落在 /workspace/api。
+# 使用 COPY --parents + 通配符（需 BuildKit、syntax 使用 dockerfile 前端 labs）；WORKDIR=/workspace，产物落在 /workspace/api。
+# Dockerfile 首行 syntax 指向 DaoCloud 镜像代理，避免内网/国内拉 registry-1.docker.io 超时。
 WORKDIR /workspace
 COPY api/package.json api/pnpm-workspace.yaml api/pnpm-lock.yaml api/turbo.json api/tsconfig.base.json api/tsconfig.runtime.json api/.npmrc ./api/
 COPY --parents api/apps/*/package.json api/internal/*/package.json api/packages/*/package.json .

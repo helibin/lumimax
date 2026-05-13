@@ -1,6 +1,6 @@
-# syntax=docker/dockerfile:1.7
+# syntax=docker.m.daocloud.io/docker/dockerfile:1.7
 #
-# Single entrypoint for all API apps (gateway, base-service, biz-service).
+# Dockerfile 前端经 DaoCloud 拉取，避免 Drone/内网直连 registry-1.docker.io 超时（与 FROM 使用 ovlb 镜像无关）。
 # Matches workspace paths expected at runtime: cwd = /app/apps/<app-dir> so
 # ../../internal/contracts/proto resolves under /app/internal/...
 #
@@ -10,7 +10,7 @@
 #     --build-arg APP_ENTRY=/app/dist/apps/gateway/src/main.js \
 #     --build-arg APP_WORKDIR=/app/apps/gateway -t lumimax-gateway:local .
 
-ARG NODE_IMAGE=registry.cn-shenzhen.aliyuncs.com/ovlb/node:22-alpine
+ARG NODE_IMAGE=ccr.ccs.tencentyun.com/ovlb/node:22-alpine
 
 FROM ${NODE_IMAGE} AS api-deps
 ENV PNPM_HOME=/pnpm

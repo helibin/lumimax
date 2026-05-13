@@ -1,5 +1,5 @@
-# syntax=docker.m.daocloud.io/docker/dockerfile:1.18-labs
-#
+# syntax=docker/dockerfile:1.18-labs
+
 # Lumimax 单镜像（nginx + 3 个 NestJS + admin/www 静态）
 # - 把 gateway / base-service / biz-service + admin SPA + www SPA + nginx 打进同一镜像，由 supervisord 守护。
 # - 适合：小规模 / 单机 / 私有化 / Demo。
@@ -17,7 +17,7 @@
 # Run:
 #   docker run --rm -p 8080:80 --env-file .env lumimax:latest
 
-ARG NODE_IMAGE=node:22-alpine
+ARG NODE_IMAGE=ccr.ccs.tencentyun.com/ovlb/node:22-alpine
 
 # ============================================================================
 # Stage 1: API builder
@@ -36,12 +36,28 @@ ENV PNPM_HOME=/pnpm \
 RUN corepack enable \
  && pnpm config set store-dir /pnpm/store
 
-# manifest 缓存层：只拷 workspace 根配置 + 各子包 package.json（不写死每个路径）。
-# 使用 COPY --parents + 通配符（需 BuildKit、syntax 使用 dockerfile 前端 labs）；WORKDIR=/workspace，产物落在 /workspace/api。
-# Dockerfile 首行 syntax 指向 DaoCloud 镜像代理，避免内网/国内拉 registry-1.docker.io 超时。
+# manifest 缓存层：workspace 根配置 + 各子包 package.json（显式 COPY，兼容未启用 BuildKit labs 的 docker build）。
+# Dockerfile 首行 syntax 经 DaoCloud，减轻直连 registry-1.docker.io 超时。
 WORKDIR /workspace
 COPY api/package.json api/pnpm-workspace.yaml api/pnpm-lock.yaml api/turbo.json api/tsconfig.base.json api/tsconfig.runtime.json api/.npmrc ./api/
-COPY --parents api/apps/*/package.json api/internal/*/package.json api/packages/*/package.json .
+COPY api/apps/gateway/package.json api/apps/gateway/
+COPY api/apps/base-service/package.json api/apps/base-service/
+COPY api/apps/biz-service/package.json api/apps/biz-service/
+COPY api/internal/auth/package.json api/internal/auth/
+COPY api/internal/config/package.json api/internal/config/
+COPY api/internal/contracts/package.json api/internal/contracts/
+COPY api/internal/integration/package.json api/internal/integration/
+COPY api/internal/security/package.json api/internal/security/
+COPY api/packages/crypto-utils/package.json api/packages/crypto-utils/
+COPY api/packages/database/package.json api/packages/database/
+COPY api/packages/health/package.json api/packages/health/
+COPY api/packages/http-kit/package.json api/packages/http-kit/
+COPY api/packages/logger/package.json api/packages/logger/
+COPY api/packages/mq/package.json api/packages/mq/
+COPY api/packages/redis/package.json api/packages/redis/
+COPY api/packages/runtime/package.json api/packages/runtime/
+COPY api/packages/storage/package.json api/packages/storage/
+COPY api/packages/validation/package.json api/packages/validation/
 WORKDIR /workspace/api
 
 # pnpm 使用全局 store（/pnpm/store）；runner 必须连同 store 一起 COPY，否则硬链/符号链断开，

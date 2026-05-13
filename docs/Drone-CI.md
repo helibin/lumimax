@@ -93,7 +93,7 @@
 
 因此 **`docker.yml` 已改为 `actions/checkout` + 路径上下文 `context: .`**，不再用带 `?submodules=0` 的 Git URL。构建前有一步 **Ensure api + web present**，若 `api/eslint.config.mjs` 缺失会打印 `git ls-tree HEAD api` 便于确认是否为 `160000`。
 
-[`docker/Dockerfile`](../docker/Dockerfile) 使用 **`# syntax=docker.m.daocloud.io/docker/dockerfile:1.18-labs`**（`COPY --parents` 等 labs 能力），与上述 CI 策略独立。
+[`docker/Dockerfile`](../docker/Dockerfile) 使用 **`# syntax=docker.m.daocloud.io/docker/dockerfile:1.7`**；`api-builder` 阶段已改为 **显式 `COPY` 各子包 `package.json`**（不再使用 `COPY --parents`，以免 Drone 等环境报 `Unknown flag: parents`）。`web-builder` 仍含 **`RUN --mount=type=cache`**，需 **BuildKit**。
 
 ### 自检
 

@@ -48,7 +48,9 @@ make docker-build
 
 镜像体积仍主要来自 **`node_modules` + pnpm store**；上述步骤在**不破坏 pnpm 链接**的前提下尽量压缩可 COPY 的源码与 store 冗余。
 
-**Dockerfile 前置**：`docker/Dockerfile` 首行 `# syntax=docker.m.daocloud.io/docker/dockerfile:1.18-labs`（避免 Drone/内网构建时向 **registry-1.docker.io** 拉取 Dockerfile 前端超时；`COPY --parents` 仍依赖 labs）。若 DaoCloud 不可用，可改为你司 Harbor/ACR 上已同步的 `docker/dockerfile` 镜像，或在 **Docker daemon** 配置 `registry-mirrors`。
+**Dockerfile 前置**：`docker/Dockerfile` 首行 `# syntax=docker.m.daocloud.io/docker/dockerfile:1.7`（减轻直连 Docker Hub 拉 Dockerfile 前端超时）。**api-builder** 阶段对各子包 `package.json` 使用 **显式 `COPY`**（与旧版 `COPY --parents` 等价），以便在 **未启用 Dockerfile labs 解析器** 的 `docker build`（如部分 Drone `plugins/docker`）上也能解析；**新增** `api/apps|internal|packages` 下的一级子包时，请在本 Dockerfile 中 **补一行** `COPY api/.../package.json ...`。
+
+**`RUN --mount=type=cache`**（web-builder）仍需要 **BuildKit**；若 runner 关闭 BuildKit，需开启 `DOCKER_BUILDKIT=1` 或 daemon 启用 BuildKit。
 
 ---
 

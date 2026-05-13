@@ -34,6 +34,8 @@ trigger:
 steps:
   - name: publish
     image: ccr.ccs.tencentyun.com/ovlb/plugins.docker
+    environment:
+      DOCKER_BUILDKIT: "1"
     settings:
       registry: hub.vlb.cn
       repo: hub.vlb.cn/work/lumimax

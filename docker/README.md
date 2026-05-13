@@ -1,6 +1,6 @@
 # Lumimax 单镜像（`lumimax:latest`）
 
-> 把 **3 个 NestJS 后端 + admin 静态 + www 静态 + nginx** 打成 **一个镜像**，对外只暴露 80。  
+> 把 **3 个 NestJS 后端 + admin 静态 + www 静态 + nginx** 打成 **一个镜像**，对外只暴露 80。
 > 适用：单机 VPS / 私有化 / Demo / 早期生产。
 
 ---
@@ -48,7 +48,7 @@ make docker-build
 
 镜像体积仍主要来自 **`node_modules` + pnpm store**；上述步骤在**不破坏 pnpm 链接**的前提下尽量压缩可 COPY 的源码与 store 冗余。
 
-**Dockerfile 前置**：`docker/Dockerfile` 首行 `# syntax=docker.m.daocloud.io/docker/dockerfile:1.7`（减轻直连 Docker Hub 拉 Dockerfile 前端超时）。**api-builder** 阶段对各子包 `package.json` 使用 **显式 `COPY`**（与旧版 `COPY --parents` 等价），以便在 **未启用 Dockerfile labs 解析器** 的 `docker build`（如部分 Drone `plugins/docker`）上也能解析；**新增** `api/apps|internal|packages` 下的一级子包时，请在本 Dockerfile 中 **补一行** `COPY api/.../package.json ...`。
+**Dockerfile 前置**：`docker/Dockerfile` 首行 `# syntax=docker.m.daocloud.io/docker/dockerfile:1.8`（减轻直连 Docker Hub 拉 Dockerfile 前端超时）。**api-builder** 阶段对各子包 `package.json` 使用 **显式 `COPY`**（与旧版 `COPY --parents` 等价），以便在 **未启用 Dockerfile labs 解析器** 的 `docker build`（如部分 Drone `plugins/docker`）上也能解析；**新增** `api/apps|internal|packages` 下的一级子包时，请在本 Dockerfile 中 **补一行** `COPY api/.../package.json ...`。
 
 **`RUN --mount=type=cache`**（web-builder）仍需要 **BuildKit**；若 runner 关闭 BuildKit，需开启 `DOCKER_BUILDKIT=1` 或 daemon 启用 BuildKit。
 

@@ -1,4 +1,4 @@
-# syntax=ccr.ccs.tencentyun.com/ovlb/docker/dockerfile:1.18-labs
+# syntax=docker.m.daocloud.io/docker/dockerfile:1.18-labs
 
 # Lumimax 单镜像（nginx + 3 个 NestJS + admin/www 静态）
 # - 把 gateway / base-service / biz-service + admin SPA + www SPA + nginx 打进同一镜像，由 supervisord 守护。

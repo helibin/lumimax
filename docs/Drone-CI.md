@@ -24,6 +24,42 @@
 2. 在 Drone UI 中 **Activate** 本仓库，Drone 会读根目录 **`.drone.yml`**。
 3. 默认 **amd64**；若 runner 只有 arm64，请把各 pipeline 里的 `platform.arch` 改为 `arm64`（或拆多架构 pipeline）。
 
+### BuildKit 是统一前提
+
+本仓库的镜像构建以 **BuildKit** 为统一方案：
+
+- **GitHub Actions**：根目录 [`docker.yml`](../.github/workflows/docker.yml) 已通过 `docker/setup-buildx-action@v3` + `docker/build-push-action@v6` 走 Buildx / BuildKit。
+- **Drone**：根目录 [`.drone.yml`](../.drone.yml) 同样假设 runner 宿主机的 Docker daemon 已开启 BuildKit。
+
+原因是 [`docker/Dockerfile`](../docker/Dockerfile) 使用了 BuildKit 语法，例如：
+
+- `# syntax=...dockerfile:1.18-labs`
+- `RUN --mount=type=cache,...`
+
+因此本仓库 **不以“兼容传统 docker build”为目标**；若 Drone runner 未开启 BuildKit，会在 `web-builder` 阶段直接报错：
+
+- `the --mount option requires BuildKit`
+
+### 在 Drone runner 宿主机开启 BuildKit
+
+在运行 `drone-runner-docker` 的宿主机上配置 Docker daemon：
+
+```json
+{
+  "features": {
+    "buildkit": true
+  }
+}
+```
+
+文件路径通常为 `/etc/docker/daemon.json`。保存后重启 Docker：
+
+```bash
+sudo systemctl restart docker
+```
+
+若宿主机已有 `daemon.json`，请将 `features.buildkit=true` 合并进去，不要覆盖已有镜像加速、日志、registry 等配置。
+
 ### Drone `plugins.docker` / `registry-1.docker.io` 超时
 
 日志里 **`Get "https://registry-1.docker.io/v2/" ... Client.Timeout`** 多半是 BuildKit 在解析 Dockerfile 首行 **`# syntax=docker/dockerfile:...`** 时，要从 **Docker Hub** 拉取 **Dockerfile 前端镜像**（与 `FROM` 是否用自建镜像无关）。
@@ -70,7 +106,7 @@
 可以同时保留：
 
 - **GitHub Actions**：`.github/workflows/ci.yml`、`.github/workflows/docker.yml`（仅推 **Harbor `hub.vlb.cn/work/lumimax`**，可选飞书 `FEISHU_WEBHOOK`）。
-- **Drone**：`.drone.yml`（自建 runner、可推内网 Harbor 或同一 GHCR）。
+- **Drone**：`.drone.yml`（自建 runner、需宿主机 Docker daemon 开启 BuildKit，可推内网 Harbor 或同一 GHCR）。
 
 同一 `push` 可能 **各跑一套** CI/CD。若希望「GitHub 只做 PR 检查、镜像只走 Drone」，可在 GitHub 里关掉 `docker.yml` 的 `push` 触发，或只在 Drone 配 `docker-lumimax` 所需 secret。
 
@@ -91,9 +127,9 @@
 1. **Git 上下文 + 默认拉子模块**：`git submodule update` 报 `No url found for submodule path 'api'`。  
 2. **Git 上下文 + `?submodules=0`**：不拉子模块，父仓库里 **没有** `api/` 下的 blob → `COPY api/eslint.config.mjs` 等报 **not found**。
 
-因此 **`docker.yml` 已改为 `actions/checkout` + 路径上下文 `context: .`**，不再用带 `?submodules=0` 的 Git URL。构建前有一步 **Ensure api + web present**，若 `api/eslint.config.mjs` 缺失会打印 `git ls-tree HEAD api` 便于确认是否为 `160000`。
+因此 **`docker.yml` 已改为 `actions/checkout` + 路径上下文 `context: .`**，不再用带 `?submodules=0` 的 Git URL。
 
-[`docker/Dockerfile`](../docker/Dockerfile) 使用 **`# syntax=docker.m.daocloud.io/docker/dockerfile:1.7`**；`api-builder` 阶段已改为 **显式 `COPY` 各子包 `package.json`**（不再使用 `COPY --parents`，以免 Drone 等环境报 `Unknown flag: parents`）。`web-builder` 仍含 **`RUN --mount=type=cache`**，需 **BuildKit**。
+[`docker/Dockerfile`](../docker/Dockerfile) 使用 BuildKit syntax；`api-builder` 阶段已改为 **显式 `COPY` 各子包 `package.json`**（不再使用 `COPY --parents`，以免 Drone 等环境报 `Unknown flag: parents`）。`web-builder` 仍含 **`RUN --mount=type=cache`**，因此 GitHub Actions 依赖 Buildx / BuildKit，Drone runner 也必须启用 BuildKit。
 
 ### 自检
 

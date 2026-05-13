@@ -1,5 +1,5 @@
 # Drone CI（自建 Drone Server + docker runner）
-# 与根目录 .github/workflows 行为对齐：api / web 校验 + 可选构建并推送 lumimax:latest。
+# 与根目录 .github/workflows 行为对齐：统一使用 BuildKit 构建 docker/Dockerfile，并推送 lumimax 标签。
 #
 # 可参考 api/.drone.yml 的优化点（本文件已对齐）：
 # - 关键步骤后增加飞书 webhook 成功/失败通知（需 Secret：FEISHU_WEBHOOK）
@@ -7,6 +7,8 @@
 # - 若拉取 plugins/docker、plugins.webhook 较慢，可将 image 改为与 api/.drone.yml 相同的
 #   自建镜像（如 cccr.ccs.tencentyun.com/ovlb/plugins.docker）
 #
+# 注意：docker/Dockerfile 使用 RUN --mount=type=cache 等 BuildKit 语法；
+# Drone runner 宿主机的 Docker daemon 需开启 BuildKit，否则 publish 会失败。
 # 镜像推送密钥见 docs/Drone-CI.md
 kind: pipeline
 type: docker

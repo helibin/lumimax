@@ -35,17 +35,14 @@ export class GrpcInvokerService {
 
     for (let attempt = 0; attempt <= retryCount; attempt += 1) {
       try {
-        this.logger.debug('网关发起 gRPC 调用', {
-          service: input.service,
-          operation: input.operation,
-          attempt: attempt + 1,
-        }, GrpcInvokerService.name);
+        const startedAt = Date.now();
         const data = await this.invokeWithTimeout(input.call, timeoutMs, input.service, input.operation);
 
-        this.logger.debug('<<< 网关收到 gRPC 响应', {
+        this.logger.debug('网关 gRPC 调用完成', {
           service: input.service,
           operation: input.operation,
           attempt: attempt + 1,
+          durationMs: Date.now() - startedAt,
         }, GrpcInvokerService.name);
         return data;
       } catch (error) {

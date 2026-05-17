@@ -74,6 +74,20 @@ test('maps conflict exception to resource.conflict', () => {
   assert.equal(mapped.key, 'resource.conflict');
 });
 
+test('maps EMQX mq-mode HTTP ingest conflict to dedicated business code', () => {
+  const mapped = mapExceptionToBusinessError(
+    new ConflictException({
+      message: 'no',
+      businessCode: BusinessCode.IOT_EMQX_QUEUE_MODE_HTTP_INGEST_DISABLED,
+      code: BusinessCode.IOT_EMQX_QUEUE_MODE_HTTP_INGEST_DISABLED,
+      key: 'iot.emqx_queue_mode_http_ingest_disabled',
+      statusCode: 409,
+    }),
+  );
+  assert.equal(mapped.code, BusinessCode.IOT_EMQX_QUEUE_MODE_HTTP_INGEST_DISABLED);
+  assert.equal(mapped.key, 'iot.emqx_queue_mode_http_ingest_disabled');
+});
+
 test('maps user not registered to user.not_registered', () => {
   const mapped = mapExceptionToBusinessError(
     new NotFoundException('User not registered'),

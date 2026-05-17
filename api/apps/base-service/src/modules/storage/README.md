@@ -63,7 +63,7 @@
 说明：
 
 - `mode` 可选：`presigned-url` / `credentials`
-- 设备上传场景会强制走 `presigned-url`
+- 设备上传场景默认走 `presigned-url`；调用方显式传 `mode=credentials` 时走 STS 临时凭证
 - `fileType` 推荐单值 MIME
 - `maxBytes` 未传时默认 `1048576`（1MB）
 - 对外协议不再推荐 `fileTypes`，统一使用单值 `fileType`
@@ -182,6 +182,8 @@ gRPC controller 在 [storage-facade.grpc.controller.ts](/Volumes/dev/workspace/@
 
 说明：
 
+- `upload.token.request` 会显式使用 `mode=credentials`，返回 STS 临时凭证
+- `upload.url.request` 会显式使用 `mode=presigned-url`，返回一次性预签名 URL
 - `lang` 未传时默认 `zh-CN`
 - 当前建议值例如：`zh-CN`、`en-US`
 - 后续图片识别、营养分析等链路会优先参考该语言

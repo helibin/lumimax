@@ -3,41 +3,14 @@ import { InjectRepository } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
 import { DeviceCredentialEntity, DeviceEntity } from '../../common/entities/biz.entities';
 import { BizIotTopicKind } from '../../iot/iot.types';
-
-export type DeviceMqttAction = 'publish' | 'subscribe';
-
-export interface DeviceAccessAuthInput {
-  clientId: string;
-  deviceId?: string | null;
-  tenantId?: string | null;
-  vendor?: string | null;
-  certificateFingerprint?: string | null;
-  credentialId?: string | null;
-}
-
-export interface DeviceTopicAccessInput extends DeviceAccessAuthInput {
-  action: DeviceMqttAction;
-  topic: string;
-}
-
-export interface DeviceAccessDecision {
-  allowed: boolean;
-  deviceId: string | null;
-  tenantId: string | null;
-  reason?: string;
-  deviceStatus?: string | null;
-  credentialStatus?: string | null;
-  credentialId?: string | null;
-  fingerprint?: string | null;
-}
-
-export interface DeviceTopicAccessDecision extends DeviceAccessDecision {
-  topic?: string;
-  topicKind?: BizIotTopicKind;
-  topicDirection?: 'req' | 'res';
-  topicCategory?: 'connect' | 'status' | 'event' | 'attr' | 'cmd';
-  action?: DeviceMqttAction;
-}
+import type {
+  DeviceAccessAuthInput,
+  DeviceAccessDecision,
+  DeviceMqttAction,
+  DeviceTopicAccessDecision,
+  DeviceTopicAccessInput,
+  IotDeviceAccessPort,
+} from '../ports/iot-device-access.port';
 
 type ParsedTopic = {
   version: 'v1';
@@ -47,8 +20,19 @@ type ParsedTopic = {
   kind: BizIotTopicKind;
 };
 
+type ParsedTopicFilter =
+  | {
+      version: 'v1';
+      category: '+';
+      deviceId: string;
+      direction: 'res';
+      kind?: BizIotTopicKind;
+      hasCategoryWildcard: true;
+    }
+  | (ParsedTopic & { hasCategoryWildcard: false });
+
 @Injectable()
-export class DeviceAccessValidationService {
+export class DeviceAccessValidationService implements IotDeviceAccessPort {
   constructor(
     @InjectRepository(DeviceEntity)
     private readonly deviceRepository: Repository<DeviceEntity>,
@@ -91,8 +75,8 @@ export class DeviceAccessValidationService {
       );
     }
 
-    if (!isDeviceActive(device.status)) {
-      return deny('device_inactive', device.id, device.tenantId, device.status);
+    if (!isDeviceConnectable(device.status)) {
+      return deny('device_connection_disabled', device.id, device.tenantId, device.status);
     }
 
     const credential = await this.findCredential({
@@ -186,9 +170,12 @@ export class DeviceAccessValidationService {
       };
     }
 
-    let parsed: ParsedTopic;
+    let parsed: ParsedTopicFilter;
     try {
-      parsed = parseBizTopic(input.topic);
+      parsed =
+        input.action === 'subscribe'
+          ? parseSubscribableTopicFilter(input.topic)
+          : toParsedTopicFilter(parseBizTopic(input.topic));
     } catch (error) {
       return {
         ...auth,
@@ -206,22 +193,38 @@ export class DeviceAccessValidationService {
         topic: input.topic,
         action: input.action,
         topicKind: parsed.kind,
-        topicCategory: parsed.category,
+        topicCategory: toTopicCategory(parsed),
         topicDirection: parsed.direction,
         reason: 'topic_device_id_mismatch',
       };
     }
 
-    if (!isTopicActionAllowed(input.action, parsed.kind)) {
+    if (!isTopicActionAllowed(input.action, parsed.kind, parsed.hasCategoryWildcard)) {
       return {
         ...auth,
         allowed: false,
         topic: input.topic,
         action: input.action,
         topicKind: parsed.kind,
-        topicCategory: parsed.category,
+        topicCategory: toTopicCategory(parsed),
         topicDirection: parsed.direction,
         reason: 'topic_action_not_allowed',
+      };
+    }
+
+    if (
+      !isDeviceFullyActive(auth.deviceStatus)
+      && !isBootstrapTopicAllowed(input.action, parsed.kind, parsed.hasCategoryWildcard)
+    ) {
+      return {
+        ...auth,
+        allowed: false,
+        topic: input.topic,
+        action: input.action,
+        topicKind: parsed.kind,
+        topicCategory: toTopicCategory(parsed),
+        topicDirection: parsed.direction,
+        reason: 'device_limited_to_connect_topics',
       };
     }
 
@@ -231,7 +234,7 @@ export class DeviceAccessValidationService {
       topic: input.topic,
       action: input.action,
       topicKind: parsed.kind,
-      topicCategory: parsed.category,
+      topicCategory: toTopicCategory(parsed),
       topicDirection: parsed.direction,
     };
   }
@@ -316,6 +319,58 @@ function parseBizTopic(topic: string): ParsedTopic {
   };
 }
 
+function parseSubscribableTopicFilter(topic: string): ParsedTopicFilter {
+  const parts = String(topic).split('/');
+  if (parts.length !== 4) {
+    throw new Error('invalid_topic');
+  }
+  const [version, rawCategory, rawDeviceId, direction] = parts;
+  if (version !== 'v1') {
+    throw new Error('unsupported_topic_version');
+  }
+  const deviceId = normalizeIdentifier(rawDeviceId);
+  if (!deviceId) {
+    throw new Error('missing_topic_device_id');
+  }
+
+  const category = rawCategory.trim();
+  const normalizedDirection = direction.trim();
+  if (category === '+') {
+    if (normalizedDirection !== 'res') {
+      throw new Error('unsupported_topic_kind');
+    }
+    return {
+      version: 'v1',
+      category: '+',
+      deviceId,
+      direction: 'res',
+      hasCategoryWildcard: true,
+    };
+  }
+
+  const parsed = parseBizTopic(topic);
+  return {
+    ...parsed,
+    hasCategoryWildcard: false,
+  };
+}
+
+function toParsedTopicFilter(topic: ParsedTopic): ParsedTopicFilter {
+  return {
+    ...topic,
+    hasCategoryWildcard: false,
+  };
+}
+
+function toTopicCategory(
+  topic: ParsedTopicFilter,
+): DeviceTopicAccessDecision['topicCategory'] {
+  if (topic.hasCategoryWildcard) {
+    return undefined;
+  }
+  return topic.category;
+}
+
 const TOPIC_KIND_LOOKUP: Record<string, BizIotTopicKind> = {
   'connect:req': BizIotTopicKind.CONNECT_REQ,
   'connect:res': BizIotTopicKind.CONNECT_RES,
@@ -343,12 +398,44 @@ const SUBSCRIBABLE_KINDS = new Set<BizIotTopicKind>([
   BizIotTopicKind.CMD_RES,
 ]);
 
-function isTopicActionAllowed(action: DeviceMqttAction, kind: BizIotTopicKind): boolean {
+function isTopicActionAllowed(
+  action: DeviceMqttAction,
+  kind: BizIotTopicKind | undefined,
+  hasCategoryWildcard = false,
+): boolean {
+  if (action === 'subscribe' && hasCategoryWildcard) {
+    return true;
+  }
+  if (!kind) {
+    return false;
+  }
   return action === 'publish' ? PUBLISHABLE_KINDS.has(kind) : SUBSCRIBABLE_KINDS.has(kind);
 }
 
-function isDeviceActive(status: string | null | undefined): boolean {
+function isDeviceFullyActive(status: string | null | undefined): boolean {
   return normalizeOptionalIdentifier(status) === 'active';
+}
+
+function isDeviceConnectable(status: string | null | undefined): boolean {
+  const normalized = normalizeOptionalIdentifier(status);
+  return normalized !== 'frozen' && normalized !== 'retired';
+}
+
+function isBootstrapTopicAllowed(
+  action: DeviceMqttAction,
+  kind: BizIotTopicKind | undefined,
+  hasCategoryWildcard = false,
+): boolean {
+  if (action === 'subscribe' && hasCategoryWildcard) {
+    return false;
+  }
+  if (!kind) {
+    return false;
+  }
+  if (action === 'publish') {
+    return kind === BizIotTopicKind.CONNECT_REQ;
+  }
+  return kind === BizIotTopicKind.CONNECT_RES;
 }
 
 function isCredentialActive(status: string | null | undefined): boolean {

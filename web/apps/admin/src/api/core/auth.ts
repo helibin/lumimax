@@ -22,10 +22,38 @@ export namespace AuthApi {
     };
   }
 
+  export interface RabbitmqProfileStatus {
+    exchange: {
+      name: string;
+      ready: boolean;
+    };
+    extraExchanges: Array<{
+      name: string;
+      ready: boolean;
+    }>;
+    name: string;
+    queues: Array<{
+      name: string;
+      ready: boolean;
+    }>;
+    ready: boolean;
+    vhost: string;
+    warnings: string[];
+  }
+
+  export interface RabbitmqStatusResult {
+    managementUrl: string;
+    profiles: RabbitmqProfileStatus[];
+    ready: boolean;
+    warnings: string[];
+  }
+
   export interface InitStatusResult {
     databaseReady: boolean;
     initialized: boolean;
     initializedAt: null | string;
+    rabbitmq: RabbitmqStatusResult;
+    rabbitmqReady: boolean;
     seedMode: string;
     usageMode: string;
     warnings: string[];
@@ -112,6 +140,16 @@ export async function initializeSystemApi(data: AuthApi.InitializeParams) {
       password: CryptoJS.MD5(data.password).toString(),
     },
   );
+  clearInitStatusCache();
+  return result;
+}
+
+export async function setupRabbitmqApi() {
+  const result = await requestClient.post<{
+    rabbitmq: AuthApi.RabbitmqStatusResult;
+    rabbitmqReady: boolean;
+    warnings: string[];
+  }>('/admin/system/rabbitmq/setup');
   clearInitStatusCache();
   return result;
 }

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { BizIotTopicKind } from '../src/iot/iot.types';
-import { TopicParserService } from '../src/iot/events/topic-parser.service';
+import { TopicParserService } from '../src/iot/pipeline/topic-parser.service';
 
 test('topic parser extracts version category deviceId and direction', () => {
   const service = new TopicParserService();

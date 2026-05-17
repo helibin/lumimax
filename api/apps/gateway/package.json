@@ -20,6 +20,7 @@
     "@lumimax/config": "workspace:*",
     "@lumimax/http-kit": "workspace:*",
     "@lumimax/integration": "workspace:*",
+    "@lumimax/iot-kit": "workspace:*",
     "@lumimax/logger": "workspace:*",
     "@lumimax/contracts": "workspace:*",
     "@lumimax/health": "workspace:*",

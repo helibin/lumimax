@@ -15,12 +15,15 @@ help: ## 显示所有命令
 install: ## 分别在 api/ 与 web/ 子项目执行 pnpm install
 	pnpm --dir api install
 	pnpm --dir web install
+i: ## 分别在 api/ 与 web/ 子项目执行 pnpm install
+	pnpm --dir api install
+	pnpm --dir web install
 
 # ===================== 开发 =====================
 
-dev: dev-api ## 默认开发 = 拉起后端三服务（gateway/base/biz）
+dev: dev-api dev-admin ## 默认开发 = 拉起后端四服务（gateway/base/biz/iot）
 
-dev-api: ## 同时启动 gateway / base-service / biz-service（watch）
+dev-api: ## 同时启动 gateway / base-service / biz-service / iot-service（watch）
 	pnpm --dir api dev
 
 dev-admin: ## 启动 admin 前端
@@ -33,7 +36,7 @@ dev-www: ## 启动 www 前端
 
 build: build-api build-admin build-www ## 串行构建后端 + 两个前端
 
-build-api: ## 构建 gateway/base/biz
+build-api: ## 构建 gateway/base/biz/iot
 	pnpm --dir api build
 
 build-admin: ## 构建 admin 静态
@@ -55,7 +58,7 @@ db-seed: ## 仅执行 seed
 
 # ===================== 单镜像 Docker（lumimax:latest）=====================
 
-docker-build: ## 构建单镜像（nginx + 3 个 NestJS + admin/www 静态）
+docker-build: ## 构建单镜像（nginx + 4 个 NestJS + admin/www 静态）
 	docker build -f docker/Dockerfile -t lumimax:latest .
 
 docker-run: ## 单容器启动（需自备 .env，模板见 docker/.env.example；不含 postgres/redis/rabbitmq）

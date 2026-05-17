@@ -7,7 +7,7 @@ import { getDefaultDietMarket, type DietMarket, DIET_MARKET_VALUES } from '../di
 import {
   DIET_ROUTE_MARKET_ORDER,
   listRouteProviderNamesForMarket,
-} from '../diet/nutrition/nutrition-provider-router.service';
+} from '../diet/food-query/provider-route-config.util';
 
 export type ThirdPartyProbeStatus = 'up' | 'down' | 'skipped';
 
@@ -178,16 +178,7 @@ export class ThirdPartyAvailabilityService implements OnModuleInit {
           markets,
           scope: 'market',
         };
-      case 'nutritionix':
-        if (hasNutritionixConfig()) {
-          return {
-            name: 'nutritionix',
-            url: normalizeProbeUrl(getEnvString('NUTRITIONIX_BASE_URL', 'https://trackapi.nutritionix.com')!),
-            markets,
-            scope: 'market',
-          };
-        }
-        return undefined;
+      case 'usda':
       case 'usda_fdc':
         if (hasValue(getEnvString('USDA_FDC_API_KEY', '')!)) {
           return {
@@ -277,11 +268,6 @@ function isStartupCheckStrict(): boolean {
 
 function getStartupCheckTimeoutMs(): number {
   return getEnvNumber('STARTUP_THIRD_PARTY_CHECK_TIMEOUT_MS', 5000);
-}
-
-function hasNutritionixConfig(): boolean {
-  return hasValue(getEnvString('NUTRITIONIX_APP_ID', '')!)
-    && hasValue(getEnvString('NUTRITIONIX_API_KEY', '')!);
 }
 
 function hasValue(value: string): boolean {

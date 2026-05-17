@@ -97,7 +97,7 @@ test('validateAuthentication rejects mismatched clientId and deviceId', async ()
   assert.equal(result.reason, 'client_id_device_id_mismatch');
 });
 
-test('validateAuthentication rejects inactive device before checking credentials', async () => {
+test('validateAuthentication allows non-active device when connection identity is valid', async () => {
   const service = createService({
     device: {
       id: 'device-emqx-2',
@@ -123,8 +123,39 @@ test('validateAuthentication rejects inactive device before checking credentials
     vendor: 'emqx',
   });
 
+  assert.equal(result.allowed, true);
+  assert.equal(result.deviceStatus, 'inactive');
+});
+
+test('validateAuthentication rejects frozen device even when certificate matches', async () => {
+  const service = createService({
+    device: {
+      id: 'device-emqx-frozen',
+      tenantId: 'tenant-1',
+      provider: 'emqx',
+      status: 'frozen',
+    },
+    credentials: [
+      {
+        tenantId: 'tenant-1',
+        deviceId: 'device-emqx-frozen',
+        vendor: 'emqx',
+        status: 'active',
+        credentialId: 'emqx-cert-frozen',
+        fingerprint: 'frozenfp',
+      },
+    ],
+  });
+
+  const result = await service.validateAuthentication({
+    clientId: 'device-emqx-frozen',
+    tenantId: 'tenant-1',
+    vendor: 'emqx',
+    certificateFingerprint: 'frozenfp',
+  });
+
   assert.equal(result.allowed, false);
-  assert.equal(result.reason, 'device_inactive');
+  assert.equal(result.reason, 'device_connection_disabled');
 });
 
 test('validateTopicAccess allows device publish on request topics and subscribe on downlink topics', async () => {
@@ -168,6 +199,40 @@ test('validateTopicAccess allows device publish on request topics and subscribe 
   assert.equal(subscribeResult.topicKind, 'cmd.res');
 });
 
+test('validateTopicAccess allows active device subscribe with category wildcard on own downlink topics', async () => {
+  const service = createService({
+    device: {
+      id: 'device-emqx-wild-1',
+      tenantId: 'tenant-1',
+      provider: 'emqx',
+      status: 'active',
+    },
+    credentials: [
+      {
+        tenantId: 'tenant-1',
+        deviceId: 'device-emqx-wild-1',
+        vendor: 'emqx',
+        status: 'active',
+        credentialId: 'emqx-cert-wild-1',
+        fingerprint: 'wild1',
+      },
+    ],
+  });
+
+  const result = await service.validateTopicAccess({
+    clientId: 'device-emqx-wild-1',
+    tenantId: 'tenant-1',
+    vendor: 'emqx',
+    action: 'subscribe',
+    topic: 'v1/+/device-emqx-wild-1/res',
+  });
+
+  assert.equal(result.allowed, true);
+  assert.equal(result.topicDirection, 'res');
+  assert.equal(result.topicCategory, undefined);
+  assert.equal(result.topicKind, undefined);
+});
+
 test('validateTopicAccess rejects device publish to platform downlink topic', async () => {
   const service = createService({
     device: {
@@ -200,6 +265,86 @@ test('validateTopicAccess rejects device publish to platform downlink topic', as
   assert.equal(result.reason, 'topic_action_not_allowed');
 });
 
+test('validateTopicAccess limits non-active device to connect bootstrap topics', async () => {
+  const service = createService({
+    device: {
+      id: 'device-emqx-pending',
+      tenantId: 'tenant-1',
+      provider: 'emqx',
+      status: 'pending',
+    },
+    credentials: [
+      {
+        tenantId: 'tenant-1',
+        deviceId: 'device-emqx-pending',
+        vendor: 'emqx',
+        status: 'active',
+        credentialId: 'emqx-cert-pending',
+        fingerprint: 'pendingfp',
+      },
+    ],
+  });
+
+  const connectPublish = await service.validateTopicAccess({
+    clientId: 'device-emqx-pending',
+    tenantId: 'tenant-1',
+    vendor: 'emqx',
+    action: 'publish',
+    topic: 'v1/connect/device-emqx-pending/req',
+  });
+  const connectSubscribe = await service.validateTopicAccess({
+    clientId: 'device-emqx-pending',
+    tenantId: 'tenant-1',
+    vendor: 'emqx',
+    action: 'subscribe',
+    topic: 'v1/connect/device-emqx-pending/res',
+  });
+  const eventPublish = await service.validateTopicAccess({
+    clientId: 'device-emqx-pending',
+    tenantId: 'tenant-1',
+    vendor: 'emqx',
+    action: 'publish',
+    topic: 'v1/event/device-emqx-pending/req',
+  });
+
+  assert.equal(connectPublish.allowed, true);
+  assert.equal(connectSubscribe.allowed, true);
+  assert.equal(eventPublish.allowed, false);
+  assert.equal(eventPublish.reason, 'device_limited_to_connect_topics');
+});
+
+test('validateTopicAccess rejects non-active device wildcard subscribe beyond bootstrap scope', async () => {
+  const service = createService({
+    device: {
+      id: 'device-emqx-pending-wild',
+      tenantId: 'tenant-1',
+      provider: 'emqx',
+      status: 'pending',
+    },
+    credentials: [
+      {
+        tenantId: 'tenant-1',
+        deviceId: 'device-emqx-pending-wild',
+        vendor: 'emqx',
+        status: 'active',
+        credentialId: 'emqx-cert-pending-wild',
+        fingerprint: 'pendingwild',
+      },
+    ],
+  });
+
+  const result = await service.validateTopicAccess({
+    clientId: 'device-emqx-pending-wild',
+    tenantId: 'tenant-1',
+    vendor: 'emqx',
+    action: 'subscribe',
+    topic: 'v1/+/device-emqx-pending-wild/res',
+  });
+
+  assert.equal(result.allowed, false);
+  assert.equal(result.reason, 'device_limited_to_connect_topics');
+});
+
 test('validateTopicAccess rejects topic deviceId mismatch after parser normalization', async () => {
   const service = createService({
     device: {
@@ -230,4 +375,68 @@ test('validateTopicAccess rejects topic deviceId mismatch after parser normaliza
 
   assert.equal(result.allowed, false);
   assert.equal(result.reason, 'topic_device_id_mismatch');
+});
+
+test('validateTopicAccess rejects wildcard subscribe on another deviceId', async () => {
+  const service = createService({
+    device: {
+      id: 'device-emqx-6',
+      tenantId: 'tenant-1',
+      provider: 'emqx',
+      status: 'active',
+    },
+    credentials: [
+      {
+        tenantId: 'tenant-1',
+        deviceId: 'device-emqx-6',
+        vendor: 'emqx',
+        status: 'active',
+        credentialId: 'emqx-cert-6',
+        fingerprint: '6666',
+      },
+    ],
+  });
+
+  const result = await service.validateTopicAccess({
+    clientId: 'device-emqx-6',
+    tenantId: 'tenant-1',
+    vendor: 'emqx',
+    action: 'subscribe',
+    topic: 'v1/+/device-emqx-7/res',
+  });
+
+  assert.equal(result.allowed, false);
+  assert.equal(result.reason, 'topic_device_id_mismatch');
+});
+
+test('validateTopicAccess rejects multi-level wildcard subscribe filter', async () => {
+  const service = createService({
+    device: {
+      id: 'device-emqx-hash-1',
+      tenantId: 'tenant-1',
+      provider: 'emqx',
+      status: 'active',
+    },
+    credentials: [
+      {
+        tenantId: 'tenant-1',
+        deviceId: 'device-emqx-hash-1',
+        vendor: 'emqx',
+        status: 'active',
+        credentialId: 'emqx-cert-hash-1',
+        fingerprint: 'hash1',
+      },
+    ],
+  });
+
+  const result = await service.validateTopicAccess({
+    clientId: 'device-emqx-hash-1',
+    tenantId: 'tenant-1',
+    vendor: 'emqx',
+    action: 'subscribe',
+    topic: 'v1/#',
+  });
+
+  assert.equal(result.allowed, false);
+  assert.equal(result.reason, 'invalid_topic');
 });

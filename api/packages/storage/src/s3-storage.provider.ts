@@ -76,7 +76,7 @@ function createS3Client(region?: string): S3Client {
   const accessKeyId = readEnvFirst('STORAGE_ACCESS_KEY_ID') ?? cloudCredentials?.accessKeyId;
   const secretAccessKey =
     readEnvFirst('STORAGE_ACCESS_KEY_SECRET') ?? cloudCredentials?.secretAccessKey;
-  const sessionToken = readEnvFirst('STORAGE_STS_TOKEN', 'CLOUD_STS_TOKEN');
+  const sessionToken = readEnvFirst('STORAGE_STS_TOKEN');
   const endpoint = readEnvFirst('STORAGE_ENDPOINT');
   const vendor = resolveConfiguredStorageVendor();
   return new S3Client({

@@ -40,6 +40,11 @@ export class SystemController {
         type: 'hybrid',
         health: `grpc://${getEnvString('BIZ_SERVICE_GRPC_ENDPOINT', '127.0.0.1:4130')}`,
       },
+      {
+        name: 'iot-service',
+        type: 'hybrid',
+        health: `grpc://${getEnvString('IOT_SERVICE_GRPC_ENDPOINT', '127.0.0.1:4140')}`,
+      },
     ];
 
     return { services };

@@ -1,5 +1,10 @@
 import 'reflect-metadata';
-import { ensureServiceName, EnvService, getEnvNumber, getEnvString } from '@lumimax/config';
+import {
+  ensureServiceName,
+  EnvService,
+  getEnvNumber,
+  getEnvString,
+} from '@lumimax/config';
 import {
   createGlobalValidationPipe,
   enableGlobalLogging,
@@ -49,7 +54,9 @@ async function bootstrap() {
     origin:
       gatewayConfig.corsOrigin === '*'
         ? true
-        : gatewayConfig.corsOrigin.split(',').map((origin: string) => origin.trim()),
+        : gatewayConfig.corsOrigin
+            .split(',')
+            .map((origin: string) => origin.trim()),
     credentials: true,
   });
 
@@ -68,10 +75,12 @@ async function bootstrap() {
     env: appConfig.nodeEnv,
     httpPort: port,
     grpc: false,
-    rmq: rmqUrl ? { status: 'connected' } : false,
+    rmq: maskSensitiveUrl(rmqUrl),
     redis: gatewayConfig.rateLimitEnabled
       ? {
-          status: gatewayConfig.rateLimitRedisUrl ? 'configured' : 'not_configured',
+          status: gatewayConfig.rateLimitRedisUrl
+            ? gatewayConfig.rateLimitRedisUrl
+            : 'not_configured',
           rateLimitEnabled: true,
           capacity: gatewayConfig.rateLimitCapacity,
           refillPerSecond: gatewayConfig.rateLimitRefillPerSecond,
@@ -83,8 +92,26 @@ async function bootstrap() {
   });
 }
 
+function maskSensitiveUrl(url?: string): string | false {
+  const value = url?.trim();
+  if (!value) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(value);
+    if (parsed.password) {
+      parsed.password = '***';
+    }
+    return parsed.toString();
+  } catch {
+    return value;
+  }
+}
+
 function fatalExit(serviceName: string, label: string, reason: unknown): never {
-  const detail = reason instanceof Error ? (reason.stack ?? reason.message) : String(reason);
+  const detail =
+    reason instanceof Error ? (reason.stack ?? reason.message) : String(reason);
   console.error(`[${serviceName}] ${label}\n${detail}`);
   process.exit(1);
 }

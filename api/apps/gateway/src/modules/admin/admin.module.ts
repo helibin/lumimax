@@ -9,6 +9,7 @@ import { AdminPermissionGuard } from './auth/admin-permission.guard';
 import { AdminBusinessController } from './proxy/admin-business.controller';
 import { AdminSystemController } from './system/admin-system.controller';
 import { AdminSystemSetupController } from './system/admin-system-setup.controller';
+import { AdminRabbitMqSetupService } from './system/admin-rabbitmq-setup.service';
 
 @Module({
   imports: [AccessControlModule],
@@ -22,6 +23,7 @@ import { AdminSystemSetupController } from './system/admin-system-setup.controll
   providers: [
     GrpcInvokerService,
     AdminAuthService,
+    AdminRabbitMqSetupService,
     AdminJwtGuard,
     AdminPermissionGuard,
   ],

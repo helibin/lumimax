@@ -1,11 +1,13 @@
 import type { ArgumentsHost, ExceptionFilter } from '@nestjs/common';
 import { Catch, HttpException, HttpStatus } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import {
   localizeErrorMessageByCode,
   mapExceptionToBusinessError,
   resolveLocaleFromRequest,
 } from '@lumimax/contracts';
 import type { AppLogger, RequestContextService } from '@lumimax/logger';
+import { RAW_RESPONSE_METADATA_KEY } from './raw-response.decorator';
 import { createErrorResponse, getOrCreateRequestId } from './response.factory';
 
 @Catch()
@@ -13,10 +15,29 @@ export class AllExceptionFilter implements ExceptionFilter {
   constructor(
     private readonly logger: AppLogger,
     private readonly requestContext?: RequestContextService,
+    private readonly reflector?: Reflector,
   ) {}
 
   catch(exception: unknown, host: ArgumentsHost): void {
     if (host.getType<'http' | 'rpc' | 'ws'>() !== 'http') {
+      return;
+    }
+
+    const executionHost = host as ArgumentsHost & {
+      getHandler?(): unknown;
+      getClass?(): unknown;
+    };
+    const useRawResponse = readRawResponseMetadata(
+      this.reflector,
+      executionHost.getHandler?.(),
+      executionHost.getClass?.(),
+    );
+    if (useRawResponse) {
+      const ctx = host.switchToHttp();
+      const res = ctx.getResponse<{ status(code: number): { json(payload: unknown): void }; send?(payload: unknown): void }>();
+      const status = resolveStatus(exception);
+      const payload = resolveRawErrorPayload(exception, status);
+      res.status(status).json(payload);
       return;
     }
 
@@ -63,16 +84,15 @@ export class AllExceptionFilter implements ExceptionFilter {
           : typeof req.url === 'string'
             ? req.url
             : '/',
-        durationSeconds,
         status,
         code: businessError.key,
         message: localizedMessage,
         rawMessage,
+        details: responseDetails,
         rootCause: errorDetails.rootCause,
         stack: errorDetails.stack,
         upstream: errorDetails.upstream,
         appError: errorDetails.appError,
-        details: responseDetails,
       },
       AllExceptionFilter.name,
     );
@@ -82,6 +102,48 @@ export class AllExceptionFilter implements ExceptionFilter {
 }
 
 export { AllExceptionFilter as ApiExceptionFilter };
+
+function readRawResponseMetadata(
+  reflector: Reflector | undefined,
+  handler: unknown,
+  targetClass: unknown,
+): boolean | undefined {
+  if (!reflector) {
+    return undefined;
+  }
+  if (typeof handler === 'function') {
+    const handlerValue = reflector.get<boolean>(
+      RAW_RESPONSE_METADATA_KEY,
+      handler,
+    );
+    if (handlerValue !== undefined) {
+      return handlerValue;
+    }
+  }
+  if (typeof targetClass === 'function') {
+    return reflector.get<boolean>(
+      RAW_RESPONSE_METADATA_KEY,
+      targetClass,
+    );
+  }
+  return undefined;
+}
+
+function resolveRawErrorPayload(exception: unknown, status: number): Record<string, unknown> {
+  if (exception instanceof HttpException) {
+    const response = exception.getResponse();
+    if (response && typeof response === 'object' && !Array.isArray(response)) {
+      return response as Record<string, unknown>;
+    }
+    if (typeof response === 'string' && response.trim().length > 0) {
+      return { message: response };
+    }
+  }
+  if (exception instanceof Error) {
+    return { message: exception.message, status };
+  }
+  return { message: 'Internal server error', status };
+}
 
 function resolveDurationSeconds(startTime?: number): number {
   if (!startTime || !Number.isFinite(startTime)) {

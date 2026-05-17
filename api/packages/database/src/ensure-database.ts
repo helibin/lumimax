@@ -1,5 +1,6 @@
 import { getEnvString, resolveServiceEnvFilePaths } from '@lumimax/config';
 import { connectPgWithRetry } from './pg-connect-with-retry';
+import { normalizeLocalhostConnectionUrl } from './normalize-db-url';
 
 const MISSING_DATABASE_ERROR_CODE = '3D000';
 const DUPLICATE_DATABASE_ERROR_CODE = '42P04';
@@ -65,7 +66,7 @@ function resolveTargetDbUrl(): string {
     getEnvString('DB_URL');
 
   if (explicit?.trim()) {
-    return explicit.trim();
+    return normalizeLocalhostConnectionUrl(explicit) ?? explicit.trim();
   }
 
   throw new Error(

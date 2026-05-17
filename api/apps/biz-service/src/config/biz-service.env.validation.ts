@@ -1,5 +1,10 @@
 import { plainToInstance, Transform } from 'class-transformer';
 import {
+  IOT_BRIDGE_DEFAULT_PREFETCH,
+  RABBITMQ_DEFAULT_DLX_QUEUE,
+  RABBITMQ_DEFAULT_QUEUE,
+} from '@lumimax/config';
+import {
   IsIn,
   IsInt,
   IsNotEmpty,
@@ -42,73 +47,42 @@ class BizServiceEnvSchema {
 
   @IsOptional()
   @IsString()
-  @IsIn(['aws', 'aliyun', 'emqx'])
+  BASE_SERVICE_GRPC_ENDPOINT = '127.0.0.1:4120';
+
+  @IsOptional()
+  @IsString()
+  IOT_SERVICE_GRPC_ENDPOINT = '127.0.0.1:4140';
+
+  /** 与 iot-service 一致，影响 ingest 元数据；证书签发在 iot-service */
+  @IsOptional()
+  @IsString()
+  @IsIn(['aws', 'emqx'])
   IOT_VENDOR = 'emqx';
 
+  /** mq=消费 biz 队列；callback=不经 bridge（需 iot-service 或 gateway 入站） */
   @IsOptional()
   @IsString()
-  @IsIn(['queue', 'callback'])
-  IOT_RECEIVE_MODE = 'callback';
+  @IsIn(['mq', 'callback'])
+  IOT_RECEIVE_MODE = 'mq';
 
   @IsOptional()
   @IsString()
-  IOT_QUEUE_URL = '';
+  RABBITMQ_QUEUE = RABBITMQ_DEFAULT_QUEUE;
 
   @IsOptional()
   @IsString()
-  IOT_ENDPOINT = '';
+  RABBITMQ_DLX_QUEUE = RABBITMQ_DEFAULT_DLX_QUEUE;
 
+  @Transform(({ value }) => (value == null || value === '' ? undefined : Number(value)))
   @IsOptional()
-  @IsString()
-  IOT_POLICY_NAME = '';
+  @IsInt()
+  @Min(1000)
+  IOT_RABBITMQ_MESSAGE_TTL_MS?: number;
 
-  @IsOptional()
-  @IsString()
-  IOT_ROOT_CA_PEM = '';
-
-  @IsOptional()
-  @IsString()
-  IOT_ROOT_CA_KEY_PEM = '';
-
-  @IsOptional()
-  @IsString()
-  IOT_MQTT_USERNAME = '';
-
-  @IsOptional()
-  @IsString()
-  IOT_MQTT_PASSWORD = '';
-
-  @IsOptional()
-  @IsString()
-  IOT_MQTT_CLIENT_CERT_PEM = '';
-
-  @IsOptional()
-  @IsString()
-  IOT_MQTT_CLIENT_KEY_PEM = '';
-
-  @IsOptional()
-  @IsString()
-  IOT_INTERNAL_SHARED_SECRET = '';
-
-  @Transform(({ value }) => Number(value ?? 10))
+  @Transform(({ value }) => Number(value ?? 20))
   @IsInt()
   @Min(1)
-  IOT_QUEUE_WAIT_TIME_SECONDS = 10;
-
-  @Transform(({ value }) => Number(value ?? 60))
-  @IsInt()
-  @Min(1)
-  IOT_QUEUE_VISIBILITY_TIMEOUT = 60;
-
-  @Transform(({ value }) => Number(value ?? 5))
-  @IsInt()
-  @Min(1)
-  IOT_QUEUE_BATCH_SIZE = 5;
-
-  @Transform(({ value }) => Number(value ?? 1000))
-  @IsInt()
-  @Min(100)
-  IOT_QUEUE_IDLE_DELAY_MS = 1000;
+  IOT_BRIDGE_RABBITMQ_PREFETCH = IOT_BRIDGE_DEFAULT_PREFETCH;
 
   @Transform(({ value }) => Number(value ?? 120))
   @IsInt()
@@ -122,19 +96,11 @@ class BizServiceEnvSchema {
 
   @IsOptional()
   @IsString()
-  BASE_SERVICE_GRPC_ENDPOINT = '127.0.0.1:4120';
-
-  @IsOptional()
-  @IsString()
   LLM_VISION_PROVIDER = 'openai';
 
   @IsOptional()
   @IsString()
   LLM_VISION_TIMEOUT_MS = '15000';
-
-  @IsOptional()
-  @IsString()
-  NUTRITION_DATA_PROVIDERS = 'nutritionix,boohee,usda_fdc,edamam';
 
   @IsOptional()
   @IsString()
@@ -168,15 +134,6 @@ class BizServiceEnvSchema {
 
   @IsOptional()
   @IsString()
-  OPEN_FOOD_FACTS_BASE_URL = 'https://world.openfoodfacts.org';
-
-  @Transform(({ value }) => Number(value ?? 8000))
-  @IsInt()
-  @Min(1000)
-  OPEN_FOOD_FACTS_TIMEOUT_MS = 8000;
-
-  @IsOptional()
-  @IsString()
   EDAMAM_APP_ID = '';
 
   @IsOptional()
@@ -191,6 +148,35 @@ class BizServiceEnvSchema {
   @IsInt()
   @Min(1000)
   EDAMAM_TIMEOUT_MS = 8000;
+
+  @IsOptional()
+  @IsString()
+  PROVIDER_ROUTE_CONFIG_PATH = '';
+
+  @IsOptional()
+  @IsString()
+  @IsIn(['true', 'false'])
+  BOOHEE_ENABLED = 'true';
+
+  @IsOptional()
+  @IsString()
+  @IsIn(['true', 'false'])
+  USDA_ENABLED = 'true';
+
+  @Transform(({ value }) => Number(value ?? 5))
+  @IsInt()
+  @Min(1)
+  FOOD_QUERY_MAX_CANDIDATES = 5;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(['true', 'false'])
+  FOOD_QUERY_ENABLE_LLM_FALLBACK = 'false';
+
+  @IsOptional()
+  @IsString()
+  @IsIn(['true', 'false'])
+  FOOD_QUERY_DEBUG_ENABLED = 'false';
 
   @IsOptional()
   @IsString()
@@ -248,15 +234,10 @@ export function validateBizServiceEnv(
     BizServiceEnvSchema,
     {
       ...config,
-      IOT_VENDOR: config.IOT_VENDOR ?? 'emqx',
-      IOT_QUEUE_URL: config.IOT_QUEUE_URL ?? '',
-      IOT_ENDPOINT: config.IOT_ENDPOINT ?? '',
-      IOT_POLICY_NAME: config.IOT_POLICY_NAME ?? '',
-      IOT_QUEUE_WAIT_TIME_SECONDS: config.IOT_QUEUE_WAIT_TIME_SECONDS ?? 10,
-      IOT_QUEUE_VISIBILITY_TIMEOUT: config.IOT_QUEUE_VISIBILITY_TIMEOUT ?? 60,
-      IOT_QUEUE_BATCH_SIZE: config.IOT_QUEUE_BATCH_SIZE ?? 5,
-      IOT_QUEUE_IDLE_DELAY_MS: config.IOT_QUEUE_IDLE_DELAY_MS ?? 1000,
       SERVICE_NAME: config.SERVICE_NAME ?? 'biz-service',
+      IOT_VENDOR: config.IOT_VENDOR ?? 'emqx',
+      IOT_SERVICE_GRPC_ENDPOINT:
+        config.IOT_SERVICE_GRPC_ENDPOINT ?? '127.0.0.1:4140',
     },
     { enableImplicitConversion: true },
   );

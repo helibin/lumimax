@@ -123,11 +123,77 @@ function withBase(
   };
 }
 
+/**
+ * 单行日志用：Node 内置 `fetch` 失败时常为 `TypeError: fetch failed`，真实原因在 `cause` 链里。
+ */
+export function formatErrorMessageForLog(error: Error): string {
+  const base = (error.message || 'Unknown error').trim();
+  if (base !== 'fetch failed') {
+    return base;
+  }
+  const chain = collectCauseMessages(error.cause, 8);
+  if (chain.length === 0) {
+    return base;
+  }
+  return `${base}: ${chain.join(' ← ')}`;
+}
+
+function collectCauseMessages(cause: unknown, maxDepth: number): string[] {
+  const out: string[] = [];
+  let cur: unknown = cause;
+  let depth = 0;
+  while (cur != null && depth < maxDepth) {
+    depth++;
+    if (cur instanceof AggregateError) {
+      const first = cur.errors[0];
+      if (first !== undefined) {
+        cur = first;
+        continue;
+      }
+      cur = cur.cause;
+      continue;
+    }
+    if (cur instanceof Error) {
+      const e = cur as NodeJS.ErrnoException;
+      const code = e.code ? `[${e.code}] ` : '';
+      const msg = (e.message || e.name || 'Error').trim();
+      out.push(`${code}${msg}`.trim());
+      cur = e.cause;
+      continue;
+    }
+    if (typeof cur === 'object' && cur !== null) {
+      const o = cur as Record<string, unknown>;
+      const code = typeof o.code === 'string' ? `[${o.code}] ` : '';
+      const msg =
+        typeof o.message === 'string'
+          ? o.message.trim()
+          : typeof o.digest === 'string'
+            ? String(o.digest)
+            : '';
+      if (msg) {
+        out.push(`${code}${msg}`.trim());
+      }
+      cur = o.cause;
+      continue;
+    }
+    const s = typeof cur === 'string' ? cur : String(cur);
+    if (s && s !== '[object Object]') {
+      out.push(s);
+    }
+    break;
+  }
+  return out;
+}
+
 function normalizeError(error: unknown): NormalizedError {
   if (error instanceof Error) {
+    const message =
+      error.message === 'fetch failed'
+        ? formatErrorMessageForLog(error)
+        : (error.message || 'Unknown error');
     return {
       type: error.name || 'Error',
-      message: error.message || 'Unknown error',
+      message,
       code: readCode(error),
       stack: error.stack,
     };

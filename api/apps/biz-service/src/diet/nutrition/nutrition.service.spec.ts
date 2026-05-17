@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { pickLocalizedFoodName } from './nutrition.service';
+import { pickLocalizedFoodName } from './nutrition-localization.util';
 
 test('pickLocalizedFoodName prefers localized provider field for zh locale', () => {
   const result = pickLocalizedFoodName({

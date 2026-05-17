@@ -24,6 +24,7 @@ async function bootstrap(): Promise<void> {
   ensureServiceName(serviceName);
   await ensureDatabaseReady(serviceName);
   await applySqlMigrations(serviceName);
+  const database = resolveDatabaseLogValue();
   const host = getEnvString('HOST', '0.0.0.0')!;
   const httpPort = getEnvNumber('HTTP_PORT', 4020);
   const grpcPort = getEnvNumber('GRPC_PORT', 4120);
@@ -62,11 +63,28 @@ async function bootstrap(): Promise<void> {
     grpc: grpcUrl,
     rmq: false,
     redis: false,
-    database: false,
+    database,
     swaggerUrl: false,
     healthUrl: `http://localhost:${httpPort}/health`,
     routes: routeSummary,
   });
+}
+
+function resolveDatabaseLogValue(): string | false {
+  const dbUrl = getEnvString('DB_URL')?.trim();
+  if (!dbUrl) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(dbUrl);
+    if (parsed.password) {
+      parsed.password = '***';
+    }
+    return parsed.toString();
+  } catch {
+    return dbUrl;
+  }
 }
 
 function fatalExit(label: string, reason: unknown): never {

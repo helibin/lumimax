@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 test('AWS presence SQS rule payload can be normalized into disconnect lifecycle', async () => {
-  const { IotNormalizerService } = await import('../src/iot/events/iot-normalizer.service');
+  const { IotNormalizerService } = await import('../src/iot/pipeline/iot-normalizer.service');
 
   const normalizer = new IotNormalizerService(
     {

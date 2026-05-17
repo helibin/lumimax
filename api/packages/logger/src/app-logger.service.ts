@@ -1,7 +1,7 @@
 import type { LoggerService as NestLoggerService } from '@nestjs/common';
 import { Inject, Injectable } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
-import { formatError } from './error-formatter';
+import { formatError, formatErrorMessageForLog } from './error-formatter';
 import { formatPrettyLog } from './logger.formatter';
 import { readLoggerRuntimeConfig, resolveLoggerServiceName } from './logger.config';
 import { RequestContextService } from './request-context.service';
@@ -213,7 +213,7 @@ export class AppLoggerService implements NestLoggerService {
       return message;
     }
     if (message instanceof Error) {
-      return message.message;
+      return formatErrorMessageForLog(message);
     }
     try {
       return JSON.stringify(redactSensitive(message));

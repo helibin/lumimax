@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { IotEnvelopeService } from '../src/iot/events/iot-envelope.service';
+import { IotEnvelopeService } from '../src/iot/pipeline/iot-envelope.service';
 
 test('iot envelope validates standard protocol payload', () => {
   process.env.DEFAULT_LOCALE = 'zh-CN';

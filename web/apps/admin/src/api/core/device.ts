@@ -44,18 +44,7 @@ export namespace DeviceApi {
     userId?: null | string;
   }
 
-  export interface DeviceCredentialMeta {
-    created_at: number;
-    credential_type: string;
-    device_id: string;
-    gatewayDeviceId: string;
-    last_claimed_at?: number;
-    status: string;
-    updated_at: number;
-    vendor: number;
-  }
-
-  export interface DeviceCertificateDetail {
+  export interface DeviceCredentialDetail {
     available: boolean;
     certificateArn: null | string;
     certificatePem: null | string;
@@ -94,13 +83,13 @@ export namespace DeviceApi {
     status: 'acked' | 'failed' | 'pending' | 'sent' | 'timeout';
   }
 
-  export interface DownloadedDeviceCertificatePackage {
+  export interface DownloadedDeviceCredentialPackage {
     fileName: string;
     blob: Blob;
     mimeType: string;
   }
 
-  export interface ClaimedDeviceCertificateConfig {
+  export interface ClaimedDeviceCredentialConfig {
     certificateArn: null | string;
     certificatePem: null | string;
     claimedAt: null | string;
@@ -154,19 +143,36 @@ function normalizeDeviceItem(payload: unknown): DeviceApi.DeviceItem {
   const id = pickString(item.id) ?? '';
   const deviceSn = pickString(item.deviceSn);
   const productKey = pickString(item.productKey);
-  const provider = pickString(item.provider) === 'aliyun' ? 'aliyun' : 'aws';
+  const rawStatus = pickString(item.status);
+  const provider =
+    pickString(item.provider) === 'aliyun'
+      ? 'aliyun'
+      : pickString(item.provider) === 'emqx'
+        ? 'emqx'
+        : 'aws';
   const status = normalizeDeviceStatus(item.status, item.onlineStatus);
   const lastSeenAt = pickString(item.lastSeenAt);
+  const activatedAt = pickString(item.activatedAt);
+  const explicitIsActivated = item.isActivated;
+  const inferredIsActivated =
+    typeof explicitIsActivated === 'boolean'
+      ? explicitIsActivated
+      : Boolean(
+          activatedAt
+          || lastSeenAt
+          || rawStatus === 'active'
+          || rawStatus === 'disabled',
+        );
   const marketRaw = pickString(item.market)?.toUpperCase();
   const market = marketRaw === 'CN' || marketRaw === 'US' ? marketRaw : null;
 
   return {
-    activatedAt: pickString(item.activatedAt),
+    activatedAt,
     deviceName: pickString(item.deviceName) ?? deviceSn ?? id,
     deviceType: pickString(item.deviceType) ?? productKey ?? 'smart-scale',
     firmwareVersion: pickString(item.firmwareVersion),
     id,
-    isActivated: Boolean(item.isActivated ?? lastSeenAt),
+    isActivated: inferredIsActivated,
     lastSeenAt,
     locale: pickString(item.locale),
     market,
@@ -303,30 +309,15 @@ export async function bindDeviceApi(id: string, data: DeviceApi.BindDeviceParams
   return requestClient.post(`/admin/devices/${id}/bind`, data);
 }
 
-export async function getDeviceCredentialMetaApi(id: string) {
-  const detail = await getDeviceDetailApi(id);
-  return (
-    (detail.metadata.credentialMeta as DeviceApi.DeviceCredentialMeta | undefined) ?? {
-      created_at: 0,
-      credential_type: '',
-      device_id: detail.providerDeviceId || detail.id,
-      gatewayDeviceId: detail.id,
-      status: 'unknown',
-      updated_at: 0,
-      vendor: detail.provider === 'aliyun' ? 2 : 1,
-    }
-  );
-}
-
 export async function getDeviceCommandsApi(id: string) {
   const response = await requestClient.get<unknown[]>(`/admin/devices/${id}/commands`);
   return Array.isArray(response) ? response.map((item) => normalizeDeviceCommandItem(item)) : [];
 }
 
-export async function getDeviceCertificateApi(
+export async function getDeviceCredentialApi(
   id: string,
-): Promise<DeviceApi.DeviceCertificateDetail> {
-  const response = await requestClient.get<unknown>(`/admin/devices/${id}/certificate`);
+): Promise<DeviceApi.DeviceCredentialDetail> {
+  const response = await requestClient.get<unknown>(`/admin/devices/${id}/credential`);
   const item = pickObject(response);
 
   return {
@@ -361,10 +352,10 @@ export async function getDeviceCertificateApi(
   };
 }
 
-export async function claimDeviceCertificateApi(
+export async function claimDeviceCredentialApi(
   id: string,
-): Promise<DeviceApi.ClaimedDeviceCertificateConfig> {
-  const response = await requestClient.post<unknown>(`/admin/devices/${id}/certificate/claim`);
+): Promise<DeviceApi.ClaimedDeviceCredentialConfig> {
+  const response = await requestClient.post<unknown>(`/admin/devices/${id}/credential/claim`);
   const item = pickObject(response);
   return {
     certificateArn: pickString(item.certificateArn),
@@ -416,10 +407,10 @@ function parseContentDispositionFilename(value: unknown): null | string {
   return plain?.[1]?.trim() ?? null;
 }
 
-export async function downloadDeviceCertificatePackageApi(
+export async function downloadDeviceCredentialPackageApi(
   id: string,
-): Promise<DeviceApi.DownloadedDeviceCertificatePackage> {
-  const response = await requestClient.download<any>(`/admin/devices/${id}/certificate/download`, {
+): Promise<DeviceApi.DownloadedDeviceCredentialPackage> {
+  const response = await requestClient.download<any>(`/admin/devices/${id}/credential/download`, {
     responseReturn: 'raw' as any,
   });
   const headers = (response?.headers ?? {}) as Record<string, unknown>;
@@ -428,12 +419,12 @@ export async function downloadDeviceCertificatePackageApi(
     'application/octet-stream';
   const fileName =
     parseContentDispositionFilename(headers['content-disposition']) ??
-    `device-${id}-certificate-package.tar.gz`;
+    `device-${id}-credential-package.tar.gz`;
   const blob = (response?.data as Blob) ?? new Blob([], { type: mimeType });
   return { fileName, blob, mimeType };
 }
 
-export async function rotateDeviceCertificateApi(
+export async function rotateDeviceCredentialApi(
   id: string,
   data?: { reason?: string },
 ): Promise<{
@@ -443,7 +434,7 @@ export async function rotateDeviceCertificateApi(
   status?: string;
 }> {
   const response = await requestClient.post<unknown>(
-    `/admin/devices/${id}/certificate/rotate`,
+    `/admin/devices/${id}/credential/rotate`,
     data ?? {},
   );
   const item = pickObject(response);

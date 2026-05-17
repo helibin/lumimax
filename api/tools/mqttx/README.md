@@ -13,6 +13,8 @@
 - `MQTT_HOST`（默认 `localhost`）
 - `MQTT_PORT`（默认 `1883`，TLS 常用 `8883`）
 - `MQTT_PROTOCOL`（`mqtt` 或 `mqtts`，默认 `mqtt`）
+- `MQTT_USERNAME`（可选，用户名认证时使用）
+- `MQTT_PASSWORD`（可选，密码认证时使用）
 - `MQTT_CA`（可选，TLS CA）
 - `MQTT_CERT`（可选，TLS cert）
 - `MQTT_KEY`（可选，TLS key）

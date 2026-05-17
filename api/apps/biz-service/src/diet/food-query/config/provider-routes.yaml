@@ -1,0 +1,50 @@
+version: v4
+
+routes:
+  cn:
+    default:
+      - vision
+      - internal
+      - boohee
+      - llm_estimate
+    ingredient:
+      - vision
+      - internal
+      - boohee
+      - llm_estimate
+    prepared_dish:
+      - vision
+      - internal
+      - boohee
+      - llm_estimate
+    packaged_food:
+      - vision
+      - internal
+      - boohee
+      - nutrition_label_ocr
+      - llm_estimate
+  us:
+    default:
+      - vision
+      - internal
+      - usda
+      - edamam
+      - llm_estimate
+    ingredient:
+      - vision
+      - internal
+      - usda
+      - edamam
+      - llm_estimate
+    prepared_dish:
+      - vision
+      - internal
+      - edamam
+      - usda
+      - llm_estimate
+    packaged_food:
+      - vision
+      - internal
+      - edamam
+      - nutrition_label_ocr
+      - llm_estimate

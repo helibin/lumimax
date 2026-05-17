@@ -1,6 +1,6 @@
 import { getEnvString } from './runtime-env';
 
-export type CloudIotVendorName = 'aws' | 'aliyun' | 'emqx';
+export type CloudIotVendorName = 'aws' | 'emqx';
 export type StorageVendorName = 'aws' | 'aliyun' | 'cos' | 'minio';
 
 export function resolveConfiguredIotVendor(): CloudIotVendorName {
@@ -22,9 +22,6 @@ export function resolveConfiguredStorageVendor(): StorageVendorName {
 
 export function normalizeIotVendor(value: unknown): CloudIotVendorName {
   const normalized = String(value ?? '').trim().toLowerCase();
-  if (['aliyun', 'aly'].includes(normalized)) {
-    return 'aliyun';
-  }
   if (['emqx', 'emqx-ee', 'emqx-ce', 'mqtt'].includes(normalized)) {
     return 'emqx';
   }

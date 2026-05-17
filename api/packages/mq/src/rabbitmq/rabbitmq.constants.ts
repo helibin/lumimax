@@ -1,9 +1,10 @@
-export const RABBITMQ_CLIENT = 'RABBITMQ_CLIENT';
+export {
+  RABBITMQ_DEFAULT_EVENTS_EXCHANGE,
+  RABBITMQ_DEFAULT_EVENTS_EXCHANGE_TYPE,
+  RABBITMQ_DEFAULT_URL,
+} from '@lumimax/config';
 
-export const RABBITMQ_DEFAULT_URL = 'amqp://guest:guest@localhost:5672';
-export const RABBITMQ_DEFAULT_EVENTS_EXCHANGE = 'app.events';
-export const RABBITMQ_DEFAULT_EVENTS_EXCHANGE_TYPE = 'topic';
-export const RABBITMQ_DEFAULT_PUBLISHER_QUEUE_SUFFIX = '.events.publisher';
+export const RABBITMQ_CLIENT = 'RABBITMQ_CLIENT';
 
 export const RABBITMQ_EVENT_KEYS = {
   ORDER_CREATED: 'order.created',

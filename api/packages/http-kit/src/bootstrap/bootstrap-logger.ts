@@ -1,6 +1,7 @@
 import type { INestApplication } from '@nestjs/common';
 import { METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
 import { LoggerService, RequestContextService, ResponseLoggingInterceptor } from '@lumimax/logger';
+import { Reflector } from '@nestjs/core';
 import { AllExceptionFilter } from '../response/exception.filter';
 import { ResponseInterceptor } from '../response/response.interceptor';
 import { GlobalExceptionFilter } from './global-exception.filter';
@@ -53,13 +54,14 @@ export function enableGlobalLogging(
   const enableApiResponse = options.enableApiResponse ?? true;
   const responseLogging = app.get(ResponseLoggingInterceptor);
   const requestContext = app.get(RequestContextService);
+  const reflector = app.get(Reflector);
   app.useGlobalInterceptors(
     responseLogging,
-    ...(enableApiResponse ? [new ResponseInterceptor()] : []),
+    ...(enableApiResponse ? [new ResponseInterceptor(reflector)] : []),
   );
   app.useGlobalFilters(
     enableApiResponse
-      ? new AllExceptionFilter(logger, requestContext)
+      ? new AllExceptionFilter(logger, requestContext, reflector)
       : new GlobalExceptionFilter(logger, requestContext),
   );
   return logger;
@@ -175,9 +177,9 @@ function renderBootstrapSummary(options: BootstrapLogOptions): string {
     formatSummaryLine('运行环境', formatEnv(options.env)),
     formatSummaryLine('HTTP 服务', formatHttpStatus(options.httpPort)),
     formatSummaryLine('gRPC 服务', formatGrpcStatus(options.grpc)),
+    formatSummaryLine('路由状态', formatRouteSummary(options.routes)),
     formatSummaryLine('健康检查', formatEndpointStatus(options.healthUrl)),
     formatSummaryLine('消息队列(RMQ)', formatRabbitMqStatus(options.rmq)),
-    formatSummaryLine('路由状态', formatRouteSummary(options.routes)),
   ];
   if (showSwagger) {
     lines.push(

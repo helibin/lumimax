@@ -12,7 +12,6 @@ import { getDeviceDetailApi } from '#/api';
 import { $t } from '#/locales';
 
 const device = ref<DeviceApi.DeviceItem | null>(null);
-const credentialMeta = ref<DeviceApi.DeviceCredentialMeta | null>(null);
 const loading = ref(false);
 
 const [Drawer, drawerApi] = useVbenDrawer({
@@ -26,10 +25,8 @@ const [Drawer, drawerApi] = useVbenDrawer({
     }
     loading.value = true;
     try {
-      const detail = await getDeviceDetailApi(row.id);
-      device.value = detail;
-      credentialMeta.value =
-        (detail.metadata?.credentialMeta as DeviceApi.DeviceCredentialMeta | undefined) ?? null;
+      device.value = null;
+      device.value = await getDeviceDetailApi(row.id);
     } finally {
       loading.value = false;
     }
@@ -37,6 +34,15 @@ const [Drawer, drawerApi] = useVbenDrawer({
 });
 
 const drawerTitle = computed(() => `${$t('device.detail')} - ${device.value?.name ?? ''}`);
+
+const resolvedThingName = computed(() => device.value?.thingName || '-');
+
+const resolvedIsActivated = computed(() => {
+  if (device.value) {
+    return device.value.isActivated;
+  }
+  return false;
+});
 
 function formatTime(value?: null | string) {
   return value ? formatDateTime(value) : '-';
@@ -98,7 +104,7 @@ function getStatusColor(status?: DeviceApi.DeviceStatus) {
             {{ device.productKey || '-' }}
           </Descriptions.Item>
           <Descriptions.Item :label="$t('device.thingName')">
-            {{ device.thingName || '-' }}
+            {{ resolvedThingName }}
           </Descriptions.Item>
           <Descriptions.Item :label="$t('device.tenantId')">
             {{ device.tenantId || '-' }}
@@ -110,7 +116,7 @@ function getStatusColor(status?: DeviceApi.DeviceStatus) {
             {{ device.firmwareVersion || '-' }}
           </Descriptions.Item>
           <Descriptions.Item :label="$t('device.isActivated')">
-            {{ device.isActivated ? $t('common.yes') : $t('common.no') }}
+            {{ resolvedIsActivated ? $t('common.yes') : $t('common.no') }}
           </Descriptions.Item>
           <Descriptions.Item :label="$t('device.activatedAt')">
             {{ formatTime(device.activatedAt) }}
@@ -119,14 +125,6 @@ function getStatusColor(status?: DeviceApi.DeviceStatus) {
             {{ formatTime(device.lastSeenAt) }}
           </Descriptions.Item>
         </Descriptions>
-
-        <div class="space-y-2">
-          <div class="text-sm font-medium">
-            {{ $t('device.credentialMeta') }}
-          </div>
-          <JsonViewer :value="credentialMeta ?? {}" boxed copyable preview-mode />
-        </div>
-
         <div class="space-y-2">
           <div class="text-sm font-medium">{{ $t('device.metadata') }}</div>
           <JsonViewer :value="device.metadata ?? {}" boxed copyable preview-mode />

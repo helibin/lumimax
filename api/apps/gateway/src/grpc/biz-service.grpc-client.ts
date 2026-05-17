@@ -15,6 +15,7 @@ import {
 import { createGrpcMetadata } from '../modules/grpc-metadata.util';
 
 export const BIZ_SERVICE_GRPC_CLIENT = 'BIZ_SERVICE_GRPC_CLIENT';
+export const IOT_SERVICE_GRPC_CLIENT = 'IOT_SERVICE_GRPC_CLIENT';
 
 interface BizHealthGrpcApi {
   Ping(
@@ -73,6 +74,14 @@ interface BizIotFacadeGrpcApi {
     },
     metadata?: unknown,
   ): Observable<{ success: boolean; message: string }>;
+  Authenticate(
+    payload: { request_id: string; body_json: string },
+    metadata?: unknown,
+  ): Observable<{ json: string }>;
+  Authorize(
+    payload: { request_id: string; body_json: string },
+    metadata?: unknown,
+  ): Observable<{ json: string }>;
   CallAdminMessage(
     payload: {
       request_id: string;
@@ -88,7 +97,6 @@ export class BizServiceGrpcClient implements OnModuleInit {
   private healthService!: BizHealthGrpcApi;
   private deviceFacadeService!: BizDeviceFacadeGrpcApi;
   private dietFacadeService!: BizDietFacadeGrpcApi;
-  private iotFacadeService!: BizIotFacadeGrpcApi;
 
   constructor(
     @Inject(BIZ_SERVICE_GRPC_CLIENT) private readonly grpcClient: ClientGrpc,
@@ -101,8 +109,6 @@ export class BizServiceGrpcClient implements OnModuleInit {
       this.grpcClient.getService<BizDeviceFacadeGrpcApi>(BIZ_GRPC_SERVICES.device);
     this.dietFacadeService =
       this.grpcClient.getService<BizDietFacadeGrpcApi>(BIZ_GRPC_SERVICES.diet);
-    this.iotFacadeService =
-      this.grpcClient.getService<BizIotFacadeGrpcApi>(BIZ_GRPC_SERVICES.iot);
   }
 
   async ping(requestId: string): Promise<{ service: string; status: string }> {
@@ -189,6 +195,21 @@ export class BizServiceGrpcClient implements OnModuleInit {
     return unwrapGatewayGrpcReply<T>(reply);
   }
 
+}
+
+@Injectable()
+export class IotServiceGrpcClient implements OnModuleInit {
+  private iotFacadeService!: BizIotFacadeGrpcApi;
+
+  constructor(
+    @Inject(IOT_SERVICE_GRPC_CLIENT) private readonly grpcClient: ClientGrpc,
+  ) {}
+
+  onModuleInit(): void {
+    this.iotFacadeService =
+      this.grpcClient.getService<BizIotFacadeGrpcApi>(BIZ_GRPC_SERVICES.iot);
+  }
+
   async ingestIotCloudMessage(input: {
     topic: string;
     payload: Record<string, unknown>;
@@ -209,6 +230,40 @@ export class BizServiceGrpcClient implements OnModuleInit {
         createGrpcMetadata(requestId),
       ),
     );
+  }
+
+  async authenticateIot<T>(input: {
+    body?: Record<string, unknown>;
+    requestId?: string;
+  }): Promise<T> {
+    const requestId = input.requestId ?? getCurrentRequestId() ?? generateRequestId();
+    const reply = await firstValueFrom(
+      this.iotFacadeService.Authenticate(
+        {
+          request_id: requestId,
+          body_json: JSON.stringify(input.body ?? {}),
+        },
+        createGrpcMetadata(requestId),
+      ),
+    );
+    return JSON.parse(reply.json || '{}') as T;
+  }
+
+  async authorizeIot<T>(input: {
+    body?: Record<string, unknown>;
+    requestId?: string;
+  }): Promise<T> {
+    const requestId = input.requestId ?? getCurrentRequestId() ?? generateRequestId();
+    const reply = await firstValueFrom(
+      this.iotFacadeService.Authorize(
+        {
+          request_id: requestId,
+          body_json: JSON.stringify(input.body ?? {}),
+        },
+        createGrpcMetadata(requestId),
+      ),
+    );
+    return JSON.parse(reply.json || '{}') as T;
   }
 
   async callIotAdmin<T>(input: {
@@ -305,14 +360,14 @@ export class BizDietGrpcAdapter {
 
 @Injectable()
 export class BizIotAdminGrpcAdapter {
-  constructor(private readonly bizServiceGrpcClient: BizServiceGrpcClient) {}
+  constructor(private readonly iotServiceGrpcClient: IotServiceGrpcClient) {}
 
   async call<T>(
     method: string,
     payload: Record<string, unknown>,
     requestId: string,
   ): Promise<T> {
-    return this.bizServiceGrpcClient.callIotAdmin<T>({
+    return this.iotServiceGrpcClient.callIotAdmin<T>({
       method,
       payload,
       requestId,
@@ -339,7 +394,21 @@ export class BizIotAdminGrpcAdapter {
 
 @Injectable()
 export class BizIotBridgeGrpcAdapter {
-  constructor(private readonly bizServiceGrpcClient: BizServiceGrpcClient) {}
+  constructor(private readonly iotServiceGrpcClient: IotServiceGrpcClient) {}
+
+  async authenticate(input: {
+    body: Record<string, unknown>;
+    requestId?: string;
+  }): Promise<Record<string, unknown>> {
+    return this.iotServiceGrpcClient.authenticateIot<Record<string, unknown>>(input);
+  }
+
+  async authorize(input: {
+    body: Record<string, unknown>;
+    requestId?: string;
+  }): Promise<Record<string, unknown>> {
+    return this.iotServiceGrpcClient.authorizeIot<Record<string, unknown>>(input);
+  }
 
   async ingestCloudMessage(input: {
     topic: string;
@@ -347,7 +416,7 @@ export class BizIotBridgeGrpcAdapter {
     receivedAt?: number;
     requestId?: string;
   }): Promise<{ success: boolean; message: string }> {
-    return this.bizServiceGrpcClient.ingestIotCloudMessage(input);
+    return this.iotServiceGrpcClient.ingestIotCloudMessage(input);
   }
 }
 

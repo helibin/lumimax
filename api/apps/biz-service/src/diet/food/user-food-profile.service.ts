@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
+import { In } from 'typeorm';
 import { MealItemEntity } from '../../common/entities/biz.entities';
 import { FoodIdentityService } from './food-identity.service';
 
@@ -38,7 +39,11 @@ export class UserFoodProfileService {
     }
 
     const rows = await this.mealItemRepository.find({
-      where: { tenantId: input.tenantId, userId: input.userId.trim() },
+      where: {
+        tenantId: input.tenantId,
+        userId: input.userId.trim(),
+        recognitionStatus: In(['confirmed', 'corrected']),
+      },
       order: { createdAt: 'DESC' },
       take: 120,
     });

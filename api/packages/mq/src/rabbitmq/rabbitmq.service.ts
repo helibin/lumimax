@@ -8,16 +8,15 @@ import {
   formatError,
   readLoggerRuntimeConfig,
 } from '@lumimax/logger';
-import { getEnvString } from '@lumimax/config';
 import { lastValueFrom } from 'rxjs';
 import type { RabbitMQEventName } from './rabbitmq.constants';
 import {
   RABBITMQ_CLIENT,
-  RABBITMQ_DEFAULT_EVENTS_EXCHANGE,
-  RABBITMQ_DEFAULT_EVENTS_EXCHANGE_TYPE,
-  RABBITMQ_DEFAULT_PUBLISHER_QUEUE_SUFFIX,
-  RABBITMQ_DEFAULT_URL,
 } from './rabbitmq.constants';
+import {
+  RABBITMQ_PROFILE,
+  type ResolvedRabbitMQProfile,
+} from './rabbitmq.profile';
 import type { RabbitMQBusinessEvent } from './rabbitmq.event';
 import {
   buildRabbitMQBusinessEvent,
@@ -38,32 +37,22 @@ export class RabbitMQService implements OnModuleInit, OnModuleDestroy {
   private readonly clients = new Map<string, ClientProxy>();
   private readonly observedEmitters = new WeakSet<object>();
   private readonly source = resolveEventSource();
-  private readonly fallbackQueue = resolveDefaultPublisherQueue(this.source);
-  private readonly exchange =
-    getEnvString('RABBITMQ_EVENTS_EXCHANGE', RABBITMQ_DEFAULT_EVENTS_EXCHANGE)
-    ?? RABBITMQ_DEFAULT_EVENTS_EXCHANGE;
-  private readonly exchangeType = (getEnvString('RABBITMQ_EVENTS_EXCHANGE_TYPE') ??
-    RABBITMQ_DEFAULT_EVENTS_EXCHANGE_TYPE) as
-    | 'direct'
-    | 'fanout'
-    | 'topic'
-    | 'headers'
-    | (string & {});
-  private readonly rabbitmqUrl =
-    getEnvString('RABBITMQ_URL', RABBITMQ_DEFAULT_URL) ?? RABBITMQ_DEFAULT_URL;
   private readonly stackMaxLines = readLoggerRuntimeConfig().stackMaxLines;
   private readonly errorThrottle = new ThirdPartyErrorThrottle({
     throttleMs: readLoggerRuntimeConfig().thirdPartyErrorThrottleMs,
   });
 
   private readonly client: ClientProxy;
+  private readonly profile: ResolvedRabbitMQProfile;
   private readonly logger?: AppLogger;
 
   constructor(
     @Inject(RABBITMQ_CLIENT) client: ClientProxy,
+    @Inject(RABBITMQ_PROFILE) profile: ResolvedRabbitMQProfile,
     @Optional() logger?: AppLogger,
   ) {
     this.client = client;
+    this.profile = profile;
     this.logger = logger;
   }
 
@@ -128,12 +117,15 @@ export class RabbitMQService implements OnModuleInit, OnModuleDestroy {
     const created = ClientProxyFactory.create({
       transport: Transport.RMQ,
       options: {
-        urls: [this.rabbitmqUrl],
+        urls: [this.profile.url],
         queue,
-        exchange: this.exchange,
-        exchangeType: this.exchangeType,
+        exchange: this.profile.exchange,
+        exchangeType: this.profile.exchangeType,
         wildcards: true,
-        queueOptions: { durable: true },
+        queueOptions: {
+          durable: true,
+          ...mergeRabbitMqClientQueueArguments(this.profile.queueArguments),
+        },
       },
     });
     this.clients.set(queue, created);
@@ -175,9 +167,9 @@ export class RabbitMQService implements OnModuleInit, OnModuleDestroy {
         'rabbitmq connection closed',
         {
           queue,
-          rabbitmqUrl: this.rabbitmqUrl,
-          exchange: this.exchange,
-          exchangeType: this.exchangeType,
+          rabbitmqUrl: this.profile.url,
+          exchange: this.profile.exchange,
+          exchangeType: this.profile.exchangeType,
         },
         RabbitMQService.name,
       );
@@ -203,9 +195,9 @@ export class RabbitMQService implements OnModuleInit, OnModuleDestroy {
       message,
       {
         ...meta,
-        rabbitmqUrl: this.rabbitmqUrl,
-        exchange: this.exchange,
-        exchangeType: this.exchangeType,
+        rabbitmqUrl: this.profile.url,
+        exchange: this.profile.exchange,
+        exchangeType: this.profile.exchangeType,
         errorType: formatted.errorType,
         rootCause: formatted.rootCause,
         shortMessage: formatted.shortMessage,
@@ -224,14 +216,15 @@ export class RabbitMQService implements OnModuleInit, OnModuleDestroy {
     if (typeof fromClient === 'string' && fromClient.trim().length > 0) {
       return fromClient.trim();
     }
-    return this.fallbackQueue;
+    return this.profile.queue;
   }
 }
 
-function resolveDefaultPublisherQueue(source: string): string {
-  const configuredQueue = getEnvString('RABBITMQ_PUBLISHER_QUEUE')?.trim();
-  if (configuredQueue && configuredQueue.length > 0) {
-    return configuredQueue;
+function mergeRabbitMqClientQueueArguments(
+  args: Record<string, unknown> | undefined,
+): { arguments?: Record<string, unknown> } {
+  if (!args || Object.keys(args).length === 0) {
+    return {};
   }
-  return `${source}${RABBITMQ_DEFAULT_PUBLISHER_QUEUE_SUFFIX}`;
+  return { arguments: args };
 }

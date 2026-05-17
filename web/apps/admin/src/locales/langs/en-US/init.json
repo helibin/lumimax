@@ -6,7 +6,7 @@
     "loadFailed": "Failed to load initialization status",
     "databaseStep": {
       "title": "Database Check",
-      "description": "Verify database connection status",
+      "description": "Verify database and RabbitMQ initialization status",
       "heading": "Database connection is ready",
       "body": "The system can access {0} and is ready for initialization.",
       "database": "Database",
@@ -19,6 +19,15 @@
       "unavailable": "Unavailable",
       "notInitialized": "Not initialized",
       "info": "The initialization flow will rebuild baseline system seed data and then replace the administrator account with the values you provide."
+    },
+    "rabbitmqStep": {
+      "heading": "RabbitMQ Topology Check",
+      "body": "The deployment flow prepares the required vhost, exchange, queue, DLX, and DLQ. Review the status here and initialize them manually if needed.",
+      "connectionStatus": "RabbitMQ status",
+      "ready": "Ready",
+      "unavailable": "Not initialized",
+      "pending": "Pending",
+      "warningTitle": "RabbitMQ warnings"
     },
     "adminStep": {
       "title": "Admin Account",
@@ -94,17 +103,21 @@
       "retry": "Retry",
       "previous": "Previous",
       "next": "Next",
-      "initialize": "Initialize system"
+      "initialize": "Initialize system",
+      "initializeRabbitmq": "Initialize RabbitMQ"
     },
     "status": {
       "warnings": "Warnings"
     },
     "messages": {
       "databaseNotReady": "Initialization status is not ready yet. Confirm the database connection first.",
+      "rabbitmqNotReady": "RabbitMQ topology is not initialized yet. Complete RabbitMQ setup first.",
       "passwordMismatch": "Passwords do not match",
       "completeRequired": "Please complete the required information",
       "initializeSuccess": "System initialization completed",
-      "initializeFailed": "System initialization failed"
+      "initializeFailed": "System initialization failed",
+      "rabbitmqInitializeSuccess": "RabbitMQ initialization completed",
+      "rabbitmqInitializeFailed": "RabbitMQ initialization failed"
     }
   }
 }

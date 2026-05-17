@@ -20,6 +20,8 @@ import {
   BizIotAdminGrpcAdapter,
   BizIotBridgeGrpcAdapter,
   BizServiceGrpcClient,
+  IOT_SERVICE_GRPC_CLIENT,
+  IotServiceGrpcClient,
 } from './biz-service.grpc-client';
 
 const GRPC_LOADER_OPTIONS = {
@@ -56,6 +58,19 @@ const GRPC_LOADER_OPTIONS = {
           },
         }),
       },
+      {
+        name: IOT_SERVICE_GRPC_CLIENT,
+        inject: [ConfigService],
+        useFactory: (configService: ConfigService) => ({
+          transport: Transport.GRPC,
+          options: {
+            package: BIZ_PROTO_PACKAGE,
+            protoPath: join(process.cwd(), '../../internal/contracts/proto/biz.proto'),
+            url: configService.get<string>('IOT_SERVICE_GRPC_ENDPOINT') ?? '127.0.0.1:4140',
+            loader: GRPC_LOADER_OPTIONS,
+          },
+        }),
+      },
     ]),
   ],
   providers: [
@@ -66,6 +81,7 @@ const GRPC_LOADER_OPTIONS = {
     BaseSystemAdminGrpcAdapter,
     BaseSystemGrpcAdapter,
     BizServiceGrpcClient,
+    IotServiceGrpcClient,
     BizDeviceGrpcAdapter,
     BizDietGrpcAdapter,
     BizDietAdminGrpcAdapter,
@@ -80,6 +96,7 @@ const GRPC_LOADER_OPTIONS = {
     BaseSystemAdminGrpcAdapter,
     BaseSystemGrpcAdapter,
     BizServiceGrpcClient,
+    IotServiceGrpcClient,
     BizDeviceGrpcAdapter,
     BizDietGrpcAdapter,
     BizDietAdminGrpcAdapter,

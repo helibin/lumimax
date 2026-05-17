@@ -1,0 +1,49 @@
+# Lumimax local EMQX overrides.
+# This file intentionally keeps HTTP dashboard enabled by default and leaves
+# TLS listeners ready to be enabled once certs are generated under
+# docker/emqx/certs/.
+
+listeners.tcp.default {
+  bind = "0.0.0.0:1883"
+  max_connections = 1024000
+}
+
+# Enable after server certs exist in /opt/emqx/etc/certs/.
+# listeners.ssl.default {
+#   bind = "0.0.0.0:8883"
+#   max_connections = 1024000
+#   ssl_options {
+#     cacertfile = "/opt/emqx/etc/certs/ca.crt"
+#     certfile = "/opt/emqx/etc/certs/server.crt"
+#     keyfile = "/opt/emqx/etc/certs/server.key"
+#     verify = verify_peer
+#     fail_if_no_peer_cert = true
+#   }
+# }
+#
+# listeners.wss.default {
+#   bind = "0.0.0.0:8084"
+#   max_connections = 1024000
+#   websocket.mqtt_path = "/mqtt"
+#   ssl_options {
+#     cacertfile = "/opt/emqx/etc/certs/ca.crt"
+#     certfile = "/opt/emqx/etc/certs/server.crt"
+#     keyfile = "/opt/emqx/etc/certs/server.key"
+#   }
+# }
+
+dashboard {
+  listeners {
+    http {
+      bind = "0.0.0.0:18083"
+      max_connections = 512
+    }
+    # https {
+    #   bind = "0.0.0.0:18084"
+    #   ssl_options {
+    #     certfile = "/opt/emqx/etc/certs/server.crt"
+    #     keyfile = "/opt/emqx/etc/certs/server.key"
+    #   }
+    # }
+  }
+}

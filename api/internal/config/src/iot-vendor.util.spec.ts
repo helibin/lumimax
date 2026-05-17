@@ -11,7 +11,6 @@ import {
 test('iot vendor supports emqx aliases and defaults', () => {
   assert.equal(normalizeIotVendor('emqx'), 'emqx');
   assert.equal(normalizeIotVendor('mqtt'), 'emqx');
-  assert.equal(normalizeIotVendor('aliyun'), 'aliyun');
   assert.equal(normalizeIotVendor('aws'), 'aws');
 });
 

@@ -61,7 +61,7 @@
 - `gateway` 通过 gRPC 调用 `base-service` / `biz-service`
 - `biz-service` 如需用户、权限、配置、存储、通知等基础能力，通过 gRPC 调用 `base-service`
 - `base-service` 不允许反向依赖 `biz-service`
-- 当前阶段不要新增 `user-service`、`device-service`、`iot-bridge-service`、`diet-service`、`storage-service`、`notification-service`、`realtime-service` 等独立服务
+- 四服务为 `gateway` / `base-service` / `biz-service` / `iot-service`；不要新增其它独立部署单元（如 `user-service`、`device-service`、`diet-service` 等）
 
 ## 技术栈
 

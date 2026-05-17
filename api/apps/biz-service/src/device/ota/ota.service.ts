@@ -30,10 +30,9 @@ export class OtaService {
           checksum: pickString(body.checksum) ?? null,
           force: body.force === true,
         },
-        status: 'sent',
+        status: 'queued',
         requestedBy: 'admin',
         requestedAt: new Date(),
-        sentAt: new Date(),
       }),
     );
   }

@@ -12,6 +12,13 @@
   "resource.conflict": "资源冲突，请勿重复操作",
   "request.unprocessable": "请求语义无法处理",
   "request.too_many": "请求过于频繁，请稍后再试",
+  "iot.topic_invalid": "IoT 主题或 ACL 请求格式不合法",
+  "iot.topic_forbidden": "IoT 主题操作不被允许",
+  "iot.device_not_found": "设备不存在或未完成注册",
+  "iot.device_connection_disabled": "设备已禁用连接",
+  "iot.credential_not_matched": "设备证书或凭据不匹配",
+  "iot.credential_inactive": "设备证书或凭据未启用",
+  "iot.emqx_queue_mode_http_ingest_disabled": "EMQX 已配置为 mq 模式（IOT_RECEIVE_MODE=mq），上行仅允许经 RabbitMQ 桥接入库；请改用消息队列桥接或切换为 callback 模式后再使用 HTTP/gRPC 上行",
   "upstream.unavailable": "依赖服务暂不可用",
   "upstream.timeout": "依赖服务响应超时",
   "system.internal_error": "系统繁忙，请稍后重试"

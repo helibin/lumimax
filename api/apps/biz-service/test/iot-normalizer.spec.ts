@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { IotNormalizerService } from '../src/iot/events/iot-normalizer.service';
+import { IotNormalizerService } from '../src/iot/pipeline/iot-normalizer.service';
 
 test('normalizes AWS lifecycle presence topic into status event', () => {
   process.env.DEFAULT_LOCALE = 'en-US';
@@ -30,37 +30,6 @@ test('normalizes AWS lifecycle presence topic into status event', () => {
   assert.equal(result.event, 'status.disconnected');
   assert.equal(result.topicKind, 'status.req');
   assert.equal(result.requestId, 'aws:disconnected:device-123:1710000000000');
-  assert.equal(result.locale, 'en-US');
-});
-
-test('normalizes Aliyun lifecycle status topic into status event', () => {
-  process.env.DEFAULT_LOCALE = 'en-US';
-  const service = new IotNormalizerService(
-    {
-      parse() {
-        throw new Error('not a protocol topic');
-      },
-    } as never,
-    {
-      validate() {
-        throw new Error('not an envelope payload');
-      },
-    } as never,
-  );
-
-  const result = service.normalize({
-    vendor: 'aliyun',
-    topic: '/sys/pk-test/device-456/thing/status',
-    payload: {
-      status: 'online',
-      timestamp: 1710000001000,
-    },
-  });
-
-  assert.equal(result.deviceId, 'device-456');
-  assert.equal(result.event, 'status.connected');
-  assert.equal(result.topicKind, 'status.req');
-  assert.equal(result.requestId, 'aliyun:connected:device-456:1710000001000');
   assert.equal(result.locale, 'en-US');
 });
 

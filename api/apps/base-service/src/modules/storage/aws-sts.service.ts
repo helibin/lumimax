@@ -17,25 +17,24 @@ export class AwsStsService {
     readEnvFirst('STORAGE_ACCESS_KEY_ID') ?? this.cloudCredentials?.accessKeyId ?? '';
   private readonly secretAccessKey =
     readEnvFirst('STORAGE_ACCESS_KEY_SECRET') ?? this.cloudCredentials?.secretAccessKey ?? '';
-  private readonly assumeRoleArn = readEnvFirst('STORAGE_STS_ROLE_ARN', 'CLOUD_STS_ROLE_ARN') ?? '';
-  private readonly externalId = readEnvFirst('STORAGE_STS_EXTERNAL_ID', 'CLOUD_STS_EXTERNAL_ID')
-    ?? undefined;
+  private readonly assumeRoleArn = readEnvFirst('STORAGE_STS_ROLE_ARN') ?? '';
+  private readonly externalId = readEnvFirst('STORAGE_STS_EXTERNAL_ID') ?? undefined;
   private readonly durationSeconds = readEnvNumber(
-    ['STORAGE_STS_SESSION_DURATION_SECONDS', 'CLOUD_STS_SESSION_DURATION_SECONDS'],
+    ['STORAGE_STS_SESSION_DURATION_SECONDS'],
     900,
   );
 
   async assumeRole(requestId: string): Promise<AwsStsAssumeRoleResult> {
     if (!this.region) {
-      throw new Error('执行 AWS STS AssumeRole 需要配置 STORAGE_REGION 或 CLOUD_REGION');
+      throw new Error('执行 AWS STS AssumeRole 需要配置 STORAGE_REGION');
     }
     if (!this.accessKeyId || !this.secretAccessKey) {
       throw new Error(
-        '执行 AWS STS AssumeRole 需要配置 STORAGE_ACCESS_KEY_ID/STORAGE_ACCESS_KEY_SECRET，或对应的 CLOUD_ACCESS_KEY_ID/CLOUD_ACCESS_KEY_SECRET',
+        '执行 AWS STS AssumeRole 需要配置 STORAGE_ACCESS_KEY_ID/STORAGE_ACCESS_KEY_SECRET',
       );
     }
     if (!this.assumeRoleArn) {
-      throw new Error('执行 AWS STS AssumeRole 需要配置 STORAGE_STS_ROLE_ARN 或 CLOUD_STS_ROLE_ARN');
+      throw new Error('执行 AWS STS AssumeRole 需要配置 STORAGE_STS_ROLE_ARN');
     }
 
     const client = new STSClient({

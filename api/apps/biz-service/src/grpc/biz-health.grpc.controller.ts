@@ -2,14 +2,15 @@ import { Controller, Inject } from '@nestjs/common';
 import { resolveGrpcRequestId } from '@lumimax/integration/grpc/gateway-grpc.util';
 import { GrpcMethod } from '@nestjs/microservices';
 import { DeviceService } from '../device/devices/device.service';
+import { IotProvisioningGrpcAdapter } from '../device/identity/iot-provisioning.grpc-adapter';
 import { DietService } from '../diet/meal/diet.service';
-import { IotService } from '../iot/bridge/iot.service';
 
 @Controller()
 export class BizHealthGrpcController {
   constructor(
     @Inject(DeviceService) private readonly deviceService: DeviceService,
-    @Inject(IotService) private readonly iotService: IotService,
+    @Inject(IotProvisioningGrpcAdapter)
+    private readonly iotProvisioningAdapter: IotProvisioningGrpcAdapter,
     @Inject(DietService) private readonly dietService: DietService,
   ) {}
 
@@ -21,7 +22,7 @@ export class BizHealthGrpcController {
       requestId: resolveGrpcRequestId(payload?.request_id, metadata),
       modules: [
         this.deviceService.getStatus(),
-        this.iotService.getStatus(),
+        this.iotProvisioningAdapter.getStatus(),
         this.dietService.getStatus(),
       ],
     };

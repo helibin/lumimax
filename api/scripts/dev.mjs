@@ -14,7 +14,8 @@ const services = await checkbox({
   choices: [
     { name: "Gateway", value: "@lumimax/gateway" },
     { name: "Base Service", value: "@lumimax/base-service" },
-    { name: "Biz Service", value: "@lumimax/biz-service" }
+    { name: "Biz Service", value: "@lumimax/biz-service" },
+    { name: "IoT Service", value: "@lumimax/iot-service" }
   ]
 });
 

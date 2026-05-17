@@ -41,51 +41,32 @@ export function buildDeviceCertificatePackage(input: {
     },
   ];
 
-  if (input.vendor === 'aliyun') {
+  if (input.certificatePem) {
     entries.push({
-      name: `${baseName}-device-credentials.env`,
-      content: ensureTrailingNewline(
-        [
-          `VENDOR=${input.vendor ?? 'aliyun'}`,
-          `PRODUCT_KEY=${input.productKey ?? ''}`,
-          `DEVICE_NAME=${input.thingName ?? ''}`,
-          `DEVICE_SECRET=${input.deviceSecret ?? ''}`,
-          `IOT_ID=${input.credentialId ?? ''}`,
-          `ENDPOINT=${input.endpoint ?? ''}`,
-          `REGION=${input.region ?? ''}`,
-        ].join('\n'),
-      ),
-    });
-  } else {
-    if (input.certificatePem) {
-      entries.push({
-        name: `${baseName}-certificate.pem`,
-        content: ensureTrailingNewline(input.certificatePem),
-      });
-    }
-    if (input.privateKeyPem) {
-      entries.push({
-        name: `${baseName}-private-key.pem`,
-        content: ensureTrailingNewline(input.privateKeyPem),
-      });
-    }
-    entries.push({
-      name: input.vendor === 'emqx' ? `${baseName}-ca.pem` : 'AmazonRootCA1.pem',
-      content: ensureTrailingNewline(
-        input.rootCaPem ?? (input.vendor === 'emqx' ? '' : DEFAULT_AWS_IOT_ROOT_CA_PEM),
-      ),
+      name: `${baseName}-certificate.pem`,
+      content: ensureTrailingNewline(input.certificatePem),
     });
   }
+  if (input.privateKeyPem) {
+    entries.push({
+      name: `${baseName}-private-key.pem`,
+      content: ensureTrailingNewline(input.privateKeyPem),
+    });
+  }
+  entries.push({
+    name: input.vendor === 'emqx' ? `${baseName}-ca.pem` : 'AmazonRootCA1.pem',
+    content: ensureTrailingNewline(
+      input.rootCaPem ?? (input.vendor === 'emqx' ? '' : DEFAULT_AWS_IOT_ROOT_CA_PEM),
+    ),
+  });
 
   const tarBuffer = createTarArchive(entries);
   const gzipBuffer = gzipSync(tarBuffer);
   return {
     fileName:
-      input.vendor === 'aliyun'
-        ? `${baseName}-device-secret-package.tar.gz`
-        : input.vendor === 'emqx'
-          ? `${baseName}-emqx-certificate-package.tar.gz`
-        : `${baseName}-certificate-package.tar.gz`,
+      input.vendor === 'emqx'
+        ? `${baseName}-emqx-credential-package.tar.gz`
+        : `${baseName}-credential-package.tar.gz`,
     mimeType: 'application/gzip',
     contentBase64: gzipBuffer.toString('base64'),
     size: gzipBuffer.length,

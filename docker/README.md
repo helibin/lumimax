@@ -1,7 +1,8 @@
 # Lumimax 单镜像（`lumimax:latest`）
 
-> 把 **3 个 NestJS 后端 + admin 静态 + www 静态 + nginx** 打成 **一个镜像**，对外只暴露 80。
-> 适用：单机 VPS / 私有化 / Demo / 早期生产。
+> 把 **4 个 Nest 后端（目标含 iot-service）+ admin/www 静态 + nginx** 打成 **一个镜像**，由 supervisord **多进程** 守护，对外只暴露 80。
+> **逻辑上**为四服务（见 [`docs/项目架构总览与开发约束.md`](../docs/项目架构总览与开发约束.md) §2.4、§3）；**物理上**同容器、loopback gRPC，降低初期运维成本。
+> 适用：单机 VPS / 私有化 / Demo / 早期生产。上 K8s 时可同一镜像多 Deployment，或迁 `api/Dockerfile` 多镜像，**事件契约无需改**。
 
 ---
 
@@ -12,21 +13,22 @@
   /app/api/dist/apps/gateway/src/main.js          → node 4000 (loopback)
   /app/api/dist/apps/base-service/src/main.js     → node 4020 (loopback)
   /app/api/dist/apps/biz-service/src/main.js      → node 4030 (loopback)
+  /app/api/dist/apps/iot-service/src/main.js      → node 4040 (loopback)
   /var/www/admin/                                  → admin SPA (VITE_BASE=/admin/)
   /var/www/www/                                    → www SPA (VITE_BASE=/)
   /etc/nginx/nginx.conf                            → nginx 80 (唯一对外)
-  /etc/supervisord.conf                            → 守护以上 4 个进程
+  /etc/supervisord.conf                            → 守护 nginx + gateway + base + biz + iot
 ```
 
 对外路由：
 
-| 路径 | 去向 |
-| --- | --- |
-| `xxx:80/` | `/var/www/www` 静态 |
-| `xxx:80/admin/` | `/var/www/admin` 静态 |
-| `xxx:80/api/` | `127.0.0.1:4000` (gateway) |
+| 路径                 | 去向                       |
+| -------------------- | -------------------------- |
+| `xxx:80/`            | `/var/www/www` 静态        |
+| `xxx:80/admin/`      | `/var/www/admin` 静态      |
+| `xxx:80/api/`        | `127.0.0.1:4000` (gateway) |
 | `xxx:80/api/docs` 等 | gateway 文档聚合 + Swagger |
-| `xxx:80/health` | gateway 健康检查 |
+| `xxx:80/health`      | gateway 健康检查           |
 
 ---
 
@@ -80,7 +82,8 @@ make compose-down
 ### 为什么是一个镜像、多个进程？
 
 - 单镜像 = 部署/回滚单位变成 1，符合小团队节奏
-- 多进程 = 不动现有 NestJS 的 bootstrap 与 gRPC 调用模式，**未来要拆成 3 个独立镜像不需要改一行业务代码**
+- 多进程 = 保持 **gateway / base / biz / iot-service** 各自独立 `main.js` 与 gRPC 地址，**禁止**合并成一个 Node 进程
+- 与目标四服务一致：先 Compose 单机，后 K8s 按服务拆 Pod 或拆镜像，**业务与 RabbitMQ routing key 不必推倒重来**
 
 ### 为什么不用 PM2？
 
@@ -90,16 +93,17 @@ make compose-down
 ### 端口策略
 
 - nginx 是唯一对外端口 80
-- 三个 Node 服务**只监听 127.0.0.1**（loopback），不暴露到容器网络
-- gRPC 端口（4120/4130）也只在 loopback 内通信，避免误暴露
+- 四个 Node 服务**只监听 127.0.0.1**（loopback），不暴露到容器网络
+- gRPC 端口（4120/4130/4140）也只在 loopback 内通信，避免误暴露
+- **biz-service** 仅消费 `lumimax.q.biz.events`；**iot-service** 消费 upstream/downstream bridge 队列
 
 ### 配置注入
 
-| 来源 | 用途 |
-| --- | --- |
-| `--env-file .env` / compose `environment:` | 业务配置 |
-| `/app/api/configs/` (镜像内置) | 默认值 / schema |
-| 不挂载本地 `node_modules` / 源码 | 生产保证可复现 |
+| 来源                                       | 用途            |
+| ------------------------------------------ | --------------- |
+| `--env-file .env` / compose `environment:` | 业务配置        |
+| `/app/api/configs/` (镜像内置)             | 默认值 / schema |
+| 不挂载本地 `node_modules` / 源码           | 生产保证可复现  |
 
 ### pnpm store 与 `COPY node_modules`（避免 `reflect-metadata` / `@lumimax/*` 找不到）
 
@@ -128,17 +132,22 @@ COPY --from=api-builder /pnpm/store                  /pnpm/store
 
 ---
 
-## 五、何时迁回多镜像
+## 五、何时拆部署（K8s / 多镜像）
 
-下列任意一条命中，就回到 [`api/Dockerfile`](../api/Dockerfile) + [`web/Dockerfile`](../web/Dockerfile) 多镜像方案：
+下列任意一条命中，可从本单镜像演进到 **多 Deployment 或** [`api/Dockerfile`](../api/Dockerfile) 多镜像：
 
-- `biz-service` 需要独立扩缩容（如食物分析高峰需要 4 副本）
-- 灰度发布需要按服务进行
+- `iot-service` 与 `biz-service` 需要 **独立扩缩容**（设备高峰 vs 食物分析/LLM 高峰）
+- `biz-service` 或 `gateway` 需要按服务灰度
 - FE 进了 CDN（admin/www 不再由 nginx 直出）
 - 日活 > 10k 或持续 QPS > 100
 - 多区域部署要拆服务做 GTM / 边缘路由
 
-**业务代码不需要改**：只是把 supervisord 的 4 个进程换成 4 个独立容器，nginx.conf 的 `127.0.0.1:4000` 换成 `gateway:4000`。
+**两种 K8s 演进（均可行）**：
+
+1. **同镜像、多 Deployment**：例如 `lumimax-api`（gateway+base+biz 仍可用 supervisord 或拆 command）、`lumimax-iot`（只起 `iot-service` 的 `main.js`）；环境变量 `BIZ_SERVICE_GRPC_URL` 等指向 Service DNS。
+2. **多镜像**：`api/Dockerfile` 按 `APP_DIR` 构建；Ingress 指 gateway；iot-service 无公网 Ingress。
+
+**业务代码不需要为「拆 Pod」而大改**：把 supervisord 里某一 `program:` 换成独立 Deployment 即可；nginx 中 `127.0.0.1:4000` 改为 `gateway:4000`（或集群内 Service 名）。
 
 ---
 
@@ -174,4 +183,4 @@ docker logs lumimax -f
 - [ ] HTTPS：本镜像**不内置 TLS**，前置 ALB / Cloudflare / Nginx Reverse Proxy 终结 TLS
 - [ ] `STORAGE_PUBLIC_BASE_URL` 必须配 CDN 或独立桶域
 - [ ] 容器以 non-root 运行（已在 supervisord 中设为 `user=app`）
-- [ ] 数据库 migration 由外部流水线执行，不要靠 `LUMIMAX_AUTO_MIGRATE`
+- [ ] 数据库 migration 由外部流水线执行：`pnpm --dir api infra:setup`；RabbitMQ exchange / 主队列 / 消费者绑定由 API 启动时自动 assert

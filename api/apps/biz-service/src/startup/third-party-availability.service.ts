@@ -171,10 +171,22 @@ export class ThirdPartyAvailabilityService implements OnModuleInit {
   ): { name: string; url: string; staticDetail?: string; markets: DietMarket[]; scope: 'market' } | undefined {
     switch (providerName) {
       case 'boohee':
+        if (
+          hasValue(getEnvString('BOOHEE_BASE_URL', '')!)
+          && hasValue(getEnvString('BOOHEE_APP_ID', '')!)
+          && hasValue(getEnvString('BOOHEE_APP_KEY', '')!)
+        ) {
+          return {
+            name: 'boohee',
+            url: normalizeProbeUrl(getEnvString('BOOHEE_BASE_URL', '')!),
+            markets,
+            scope: 'market',
+          };
+        }
         return {
-          name: 'boohee (cn realtime slot)',
+          name: 'boohee',
           url: '',
-          staticDetail: '暂未接入',
+          staticDetail: '未配置 BOOHEE_BASE_URL / BOOHEE_APP_ID / BOOHEE_APP_KEY',
           markets,
           scope: 'market',
         };

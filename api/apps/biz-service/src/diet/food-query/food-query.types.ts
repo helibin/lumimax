@@ -1,4 +1,5 @@
 import type { DietMarket } from '../market/diet-market';
+import type { ImageInputType } from '../interfaces/provider.contracts';
 
 export type FoodQueryMarket = 'cn' | 'us' | 'global';
 
@@ -39,6 +40,7 @@ export interface FoodQueryInput {
   imageUrl?: string;
   imageKey?: string;
   ocrText?: string;
+  imageType?: ImageInputType;
   weightGram?: number;
   locale?: string;
   countryCode?: string;
@@ -94,6 +96,19 @@ export interface StandardFoodCandidate {
   rawPayload?: unknown;
 }
 
+export interface FoodQueryProviderTrace {
+  provider: string;
+  stage: 'recognize_image' | 'search' | 'search_by_barcode';
+  status: 'success' | 'error';
+  durationMs: number;
+  imageType?: ImageInputType;
+  itemCount?: number;
+  candidateCount?: number;
+  stop?: boolean;
+  output?: Record<string, unknown>;
+  error?: string;
+}
+
 export interface FoodQueryResult {
   requestId: string;
   market: FoodQueryMarket;
@@ -110,6 +125,10 @@ export interface FoodQueryResult {
     provider: string;
     confidence?: number;
     status: 'success' | 'fallback';
+    imageType?: ImageInputType;
+  };
+  debug?: {
+    providerTraces: FoodQueryProviderTrace[];
   };
 }
 
@@ -117,6 +136,7 @@ export interface ProviderRouteContext {
   market: FoodQueryMarket;
   inputType: FoodQueryInputType;
   foodType: FoodItemType;
+  imageType?: ImageInputType;
   countryCode?: string;
   locale?: string;
   hasWeight?: boolean;
@@ -139,16 +159,24 @@ export interface ProviderStatus {
 
 export interface ProviderSearchInput {
   query: string;
+  alternateQueries?: string[];
   tenantId?: string;
   locale?: string;
   countryCode?: string;
+  market?: string;
   requestId: string;
+  imageUrl?: string;
+  ocrText?: string;
+  inputType?: FoodQueryInputType;
+  foodType?: FoodItemType;
+  imageType?: ImageInputType;
 }
 
 export interface ProviderBarcodeInput {
   barcode: string;
   locale?: string;
   countryCode?: string;
+  market?: string;
   requestId: string;
 }
 
@@ -163,7 +191,7 @@ export interface FoodNutritionProvider {
     locale?: string;
     countryCode?: string;
     requestId: string;
-  }): Promise<FoodQueryItem[]>;
+  }): Promise<{ imageType?: ImageInputType; items: FoodQueryItem[] }>;
 }
 
 export function toFoodQueryMarket(market?: string): FoodQueryMarket {

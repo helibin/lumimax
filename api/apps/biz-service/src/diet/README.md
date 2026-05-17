@@ -132,7 +132,7 @@ diet/
 | 类型 | 说明 |
 |------|------|
 | `FoodQueryInput` | 查询入参（market、inputType、query、imageUrl、weightGram 等） |
-| `FoodQueryResult` | 内部完整结果（candidates、routing、recognition） |
+| `FoodQueryResult` | 内部完整结果（candidates、routing、recognition、debug.providerTraces） |
 | `StandardFoodCandidate` | Provider 统一输出；原始响应只放 `rawPayload` |
 | `MealItemResult` | 给用户确认的简化条目（见 V4 文档） |
 
@@ -193,6 +193,7 @@ PROVIDER_ROUTE_CONFIG_PATH=apps/biz-service/src/diet/food-query/config/provider-
 # Food Query
 FOOD_QUERY_MAX_CANDIDATES=5
 FOOD_QUERY_ENABLE_LLM_FALLBACK=false
+FOOD_QUERY_ENABLE_NUTRITION_LABEL_OCR=true
 
 # 调试（biz-service HTTP，默认 4030）
 FOOD_QUERY_DEBUG_ENABLED=false

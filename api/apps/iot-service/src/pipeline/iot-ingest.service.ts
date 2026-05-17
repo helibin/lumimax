@@ -3,8 +3,8 @@ import { AppLogger } from '@lumimax/logger';
 import { RabbitMQService } from '@lumimax/mq';
 import {
   type CloudIotVendorName,
-  type NormalizedBizIotMessage,
 } from '../iot.types';
+import type { NormalizedIotMessage } from '../domain/normalized-iot-message';
 import {
   IOT_BIZ_UPLINK_RECEIVED_EVENT,
   resolveBizEventsQueueName,
@@ -40,12 +40,12 @@ export class IotIngestService {
     return this.forwardNormalizedMessage(normalized, { shouldRecord: true });
   }
 
-  async ingestNormalizedMessage(normalized: NormalizedBizIotMessage): Promise<IngestResult> {
+  async ingestNormalizedMessage(normalized: NormalizedIotMessage): Promise<IngestResult> {
     return this.forwardNormalizedMessage(normalized, { shouldRecord: false });
   }
 
   private async forwardNormalizedMessage(
-    normalized: NormalizedBizIotMessage,
+    normalized: NormalizedIotMessage,
     options: { shouldRecord: boolean },
   ): Promise<IngestResult> {
     const recorded = options.shouldRecord
@@ -128,7 +128,7 @@ type IngestResult = {
   normalized: Record<string, unknown>;
 };
 
-function summarizeNormalized(normalized: NormalizedBizIotMessage): Record<string, unknown> {
+function summarizeNormalized(normalized: NormalizedIotMessage): Record<string, unknown> {
   return {
     requestId: normalized.requestId,
     vendor: normalized.vendor,
@@ -142,7 +142,7 @@ function summarizeNormalized(normalized: NormalizedBizIotMessage): Record<string
   };
 }
 
-function toBizEvent(normalized: NormalizedBizIotMessage): Record<string, unknown> {
+function toBizEvent(normalized: NormalizedIotMessage): Record<string, unknown> {
   return {
     vendor: normalized.vendor,
     topic: normalized.topic,

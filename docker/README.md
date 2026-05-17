@@ -75,6 +75,14 @@ make compose-logs
 make compose-down
 ```
 
+若要直接使用仓库镜像而不是本地构建，可额外传入 `LUMIMAX_IMAGE`：
+
+```bash
+echo "LUMIMAX_IMAGE=hub.vlb.cn/work/lumimax:latest" > .image.env
+docker compose -f compose.stack.yml --env-file .env --env-file .image.env pull lumimax
+docker compose -f compose.stack.yml --env-file .env --env-file .image.env up -d
+```
+
 ---
 
 ## 四、设计要点 / 取舍

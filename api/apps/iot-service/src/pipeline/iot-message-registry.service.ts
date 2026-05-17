@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
 import { QueryFailedError } from 'typeorm';
 import { DeviceEntity, IotMessageEntity } from '../common/entities/biz.entities';
-import type { NormalizedBizIotMessage } from '../iot.types';
+import type { NormalizedIotMessage } from '../domain/normalized-iot-message';
 import { resolveTenantId } from '../common/tenant-scope.util';
 
 @Injectable()
@@ -15,7 +15,7 @@ export class IotMessageRegistryService {
     private readonly deviceRepository: Repository<DeviceEntity>,
   ) {}
 
-  async recordReceived(message: NormalizedBizIotMessage): Promise<{
+  async recordReceived(message: NormalizedIotMessage): Promise<{
     duplicate: boolean;
     entity: IotMessageEntity;
   }> {

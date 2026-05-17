@@ -6,6 +6,13 @@ import type {
   NutritionEstimateResult,
   NutritionEstimatorProvider,
 } from '../../interfaces/provider.contracts';
+import {
+  buildNutritionEstimatorUserPrompt,
+  NUTRITION_ESTIMATOR_SYSTEM_PROMPT,
+  parseLlmJsonObject,
+  readLlmNumber,
+  readLlmString,
+} from './nutrition-estimator-llm-prompt.util';
 
 @Injectable()
 export class GeminiNutritionEstimatorProvider implements NutritionEstimatorProvider {
@@ -37,11 +44,10 @@ export class GeminiNutritionEstimatorProvider implements NutritionEstimatorProvi
             role: 'user',
             parts: [
               {
-                text:
-                  'Estimate nutrition and return JSON as '
-                  + '{"name":"","calories":0,"protein":0,"fat":0,"carbs":0,"fiber":0,"confidence":0.0}. '
-                  + `food=${input.foodName}; weightGram=${input.weightGram ?? 100}; `
-                  + `locale=${input.locale ?? 'unknown'}; country=${input.countryCode ?? 'unknown'}`,
+                text: NUTRITION_ESTIMATOR_SYSTEM_PROMPT,
+              },
+              {
+                text: buildNutritionEstimatorUserPrompt(input),
               },
             ],
           },
@@ -54,16 +60,16 @@ export class GeminiNutritionEstimatorProvider implements NutritionEstimatorProvi
 
     const text = response.candidates?.[0]?.content?.parts?.find((part) => typeof part.text === 'string')
       ?.text ?? '{}';
-    const parsed = parseObject(text);
+    const parsed = parseLlmJsonObject(text);
 
     return {
-      name: stringValue(parsed.name) ?? input.foodName,
-      calories: numberValue(parsed.calories),
-      protein: numberValue(parsed.protein),
-      fat: numberValue(parsed.fat),
-      carbs: numberValue(parsed.carbs),
-      fiber: numberValue(parsed.fiber),
-      confidence: numberValue(parsed.confidence),
+      name: readLlmString(parsed.name) ?? input.foodName,
+      calories: readLlmNumber(parsed.calories),
+      protein: readLlmNumber(parsed.protein),
+      fat: readLlmNumber(parsed.fat),
+      carbs: readLlmNumber(parsed.carbs),
+      fiber: readLlmNumber(parsed.fiber),
+      confidence: readLlmNumber(parsed.confidence),
       source: 'llm_estimator',
       raw: parsed,
     };
@@ -79,22 +85,3 @@ type GeminiGenerateContentResponse = {
     };
   }>;
 };
-
-function parseObject(value: string): Record<string, unknown> {
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : {};
-  } catch {
-    return {};
-  }
-}
-
-function stringValue(value: unknown): string | undefined {
-  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
-}
-
-function numberValue(value: unknown): number {
-  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
-}

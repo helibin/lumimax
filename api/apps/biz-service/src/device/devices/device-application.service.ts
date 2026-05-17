@@ -34,6 +34,10 @@ import type { DeviceIdentityPort } from '../identity/device-identity.port';
 import { DEVICE_IDENTITY_PORT } from '../identity/device-identity.port';
 import type { IotDownlinkPort } from '../../iot/transport/iot-downlink.port';
 import { IOT_DOWNLINK } from '../../iot/transport/iot-downlink.port';
+import {
+  buildDeviceProtocolDebugContext,
+  DeviceProtocolDebugService,
+} from '../../iot/debug/device-protocol-debug.service';
 
 @Injectable()
 export class DeviceApplicationService {
@@ -71,6 +75,8 @@ export class DeviceApplicationService {
     private readonly iotDownlinkService: IotDownlinkPort,
     @Inject(DEVICE_IDENTITY_PORT)
     private readonly deviceIdentityService: DeviceIdentityPort,
+    @Inject(DeviceProtocolDebugService)
+    private readonly deviceProtocolDebugService: DeviceProtocolDebugService,
   ) {}
 
   async execute<T = unknown>(input: {
@@ -169,6 +175,10 @@ export class DeviceApplicationService {
         return this.listOtaTasks(String(params.id ?? ''), tenantId);
       case 'admin.dashboard.overview':
         return this.getAdminDashboardOverview(tenantId);
+      case 'admin.debug.deviceProtocol.uploadUrl':
+        return this.debugDeviceProtocolUploadUrl(body, tenantId, input.requestId);
+      case 'admin.debug.deviceProtocol.foodRecognition':
+        return this.debugDeviceProtocolFoodRecognition(body, tenantId, input.requestId);
       default:
         return undefined;
     }
@@ -1066,6 +1076,56 @@ export class DeviceApplicationService {
       throw new Error(`device not found: ${id}`);
     }
     return device;
+  }
+
+  private async debugDeviceProtocolUploadUrl(
+    body: Record<string, unknown>,
+    tenantId: string,
+    requestId: string,
+  ) {
+    const context = await this.resolveDeviceProtocolDebugContext(body, tenantId, requestId);
+    const file = pickString(body.filename);
+    const fileType = pickString(body.fileType) ?? pickString(body.mimeType) ?? 'image/jpeg';
+    return this.deviceProtocolDebugService.requestUploadUrl({
+      context,
+      fileType,
+      ...(file ? { filename: file } : {}),
+    });
+  }
+
+  private async debugDeviceProtocolFoodRecognition(
+    body: Record<string, unknown>,
+    tenantId: string,
+    requestId: string,
+  ) {
+    const context = await this.resolveDeviceProtocolDebugContext(body, tenantId, requestId);
+    const objectKey = pickString(body.objectKey) ?? pickString(body.imageKey);
+    const weightGram = pickNumber(body.weightGram) ?? pickNumber(body.weight);
+    if (!objectKey || !weightGram) {
+      throw new BadRequestException('objectKey and weightGram are required');
+    }
+    return this.deviceProtocolDebugService.runFoodRecognitionChain({
+      context,
+      objectKey,
+      weightGram,
+    });
+  }
+
+  private async resolveDeviceProtocolDebugContext(
+    body: Record<string, unknown>,
+    tenantId: string,
+    requestId: string,
+  ) {
+    const device = await this.findDeviceByProviderIdOrThrow(body, tenantId);
+    const userId = pickString(body.userId) ?? pickString(body.user_id) ?? device.boundUserId ?? undefined;
+    return buildDeviceProtocolDebugContext({
+      deviceSn: device.deviceSn,
+      internalDeviceId: device.id,
+      locale: pickString(body.locale) ?? device.locale ?? getDefaultLocale(),
+      market: pickString(body.market) ?? device.market ?? getDefaultDietMarket(),
+      requestId,
+      userId,
+    });
   }
 
   private async findDeviceByProviderIdOrThrow(

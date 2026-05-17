@@ -49,8 +49,8 @@ lumimax/
 | 系统 | 文件 | 说明 |
 | --- | --- | --- |
 | **GitHub Actions** | [`.github/workflows/ci.yml`](.github/workflows/ci.yml) | PR / `main` 等分支：并行跑 **api**（`arch:check` + `lint` + `build`）与 **web**（`build:admin` + `build:www`）。 |
-| **GitHub Actions** | [`.github/workflows/docker.yml`](.github/workflows/docker.yml) | **checkout** 后按 **路径上下文** 构建 `docker/Dockerfile`，**仅**推 **Harbor**（`hub.vlb.cn/work/lumimax`，可改 `HARBOR_IMAGE`）。需 `HARBOR_USERNAME` / `HARBOR_PASSWORD`；可选 `FEISHU_WEBHOOK`。 |
-| **自建 Drone** | [`.drone.yml`](.drone.yml) | `ci-api` / `ci-web` / `docker-lumimax`；可选飞书 `FEISHU_WEBHOOK`；镜像推送用 `plugins/docker` + 仓库 Secrets。说明见 [`docs/Drone-CI.md`](docs/Drone-CI.md)。 |
+| **GitHub Actions** | [`.github/workflows/docker.yml`](.github/workflows/docker.yml) | **checkout** 后按 **路径上下文** 构建 `docker/Dockerfile`，推送 **Harbor**（`hub.vlb.cn/work/lumimax`，可改 `HARBOR_IMAGE`）；`main` 可选 SSH 部署开发环境。需 `HARBOR_USERNAME` / `HARBOR_PASSWORD`；部署需 `DEV_HOST` / `DEV_SSH_USER` / `DEV_SSH_KEY`。 |
+| **自建 Drone** | [`.drone.yml`](.drone.yml) | `ci-api` / `ci-web` / `docker-lumimax`；可选飞书 `FEISHU_WEBHOOK`；镜像推送用 `plugins/docker`，并可按 `main` / `tag` 走 SSH 部署。说明见 [`docs/Drone-CI.md`](docs/Drone-CI.md)。 |
 
 GitHub 只识别仓库根下的 `.github/workflows/`。`api/.github/`、`web/.github/` 里的 workflow 在单仓根目录 **不会自动执行**；可迁到根 `.github/` 或改为被根 workflow 复用。
 
@@ -102,7 +102,7 @@ make dev-www      # 官网
 
 ## 单镜像部署（`lumimax:latest`）
 
-适用场景：**单机 VPS / 私有化 / Demo / 小规模生产（< 100 QPS）**。
+适用场景：**单机 VPS / 私有化 / Demo / 小规模生产（< 100 QPS）**。`compose.stack.yml` 默认使用本地 `lumimax:latest`，也支持通过 `LUMIMAX_IMAGE` 覆盖为远端仓库镜像，方便 CI/CD 直接部署。
 
 镜像内组成：
 

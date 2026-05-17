@@ -4,6 +4,8 @@ export function pickLocalizedFoodName(input: {
   queryName?: string;
   aliases?: string[];
   raw?: Record<string, unknown>;
+  /** 为 true 时允许用中文 query/别名顶替（仅内部库等场景） */
+  allowQueryAliasFallback?: boolean;
 }): string {
   const fallbackName = input.fallbackName.trim();
   const language = normalizeLocaleLanguage(input.locale);
@@ -16,7 +18,7 @@ export function pickLocalizedFoodName(input: {
     return localizedFromRaw;
   }
 
-  if (language === 'zh') {
+  if (input.allowQueryAliasFallback && language === 'zh') {
     const localizedAlias = [input.queryName, ...(input.aliases ?? [])].find((item) => containsHanText(item));
     if (localizedAlias?.trim()) {
       return localizedAlias.trim();

@@ -16,6 +16,9 @@ test('startup third-party availability report becomes degraded when probe fails'
   process.env.USDA_FDC_API_KEY = 'demo-usda-key';
   process.env.EDAMAM_APP_ID = 'demo-edamam-id';
   process.env.EDAMAM_API_KEY = 'demo-edamam-key';
+  process.env.BOOHEE_BASE_URL = 'https://boohee.example.com/open';
+  process.env.BOOHEE_APP_ID = 'demo-boohee-id';
+  process.env.BOOHEE_APP_KEY = 'demo-boohee-key';
   process.env.NUTRITION_DATA_PROVIDERS = 'edamam,usda_fdc,boohee';
 
   const originalFetch = globalThis.fetch;
@@ -42,7 +45,7 @@ test('startup third-party availability report becomes degraded when probe fails'
       report.items.map((item) => item.name),
       [
         'llm_vision (gpt-4.1-mini)',
-        'boohee (cn realtime slot)',
+        'boohee',
         'usda_fdc',
         'edamam',
         'llm_nutrition (gpt-4.1-mini)',

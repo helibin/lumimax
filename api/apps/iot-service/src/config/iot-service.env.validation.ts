@@ -65,6 +65,10 @@ export class IotServiceEnv {
 
   @IsOptional()
   @IsString()
+  EMQX_DEVICE_ENDPOINT = '';
+
+  @IsOptional()
+  @IsString()
   AWS_IOT_ENDPOINT = '';
 
   @IsOptional()
@@ -117,11 +121,6 @@ export class IotServiceEnv {
 
   @IsOptional()
   @IsString()
-  @IsIn(['mqtt', 'http'])
-  EMQX_PUBLISH_MODE = 'http';
-
-  @IsOptional()
-  @IsString()
   EMQX_HTTP_BASE_URL = '';
 
   @IsOptional()
@@ -131,6 +130,14 @@ export class IotServiceEnv {
   @IsOptional()
   @IsString()
   EMQX_AUTH_SECRET = '';
+
+  @IsOptional()
+  @IsString()
+  EMQX_SHARED_SUBSCRIPTION_GROUP = 'lumimax-iot';
+
+  @IsOptional()
+  @IsString()
+  EMQX_SHARED_SUBSCRIPTION_TOPICS = 'v1/+/+/req';
 
   @IsOptional()
   @IsString()
@@ -208,6 +215,7 @@ export function validateIotServiceEnv(
       IOT_VENDOR: config.IOT_VENDOR ?? 'emqx',
       AWS_SQS_QUEUE_URL: config.AWS_SQS_QUEUE_URL ?? '',
       EMQX_BROKER_URL: config.EMQX_BROKER_URL ?? '',
+      EMQX_DEVICE_ENDPOINT: config.EMQX_DEVICE_ENDPOINT ?? '',
       AWS_IOT_ENDPOINT: config.AWS_IOT_ENDPOINT ?? '',
       EMQX_REGION: config.EMQX_REGION ?? '',
       AWS_IOT_POLICY_NAME: config.AWS_IOT_POLICY_NAME ?? '',

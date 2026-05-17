@@ -65,9 +65,12 @@ services:
       - lumimax
 
   emqx:
-    image: registry.cn-shenzhen.aliyuncs.com/ovlb/emqx.emqx-enterprise:5.8.6
+    image: registry.cn-shenzhen.aliyuncs.com/ovlb/emqx.emqx:5.8.6
     container_name: lumimax-emqx
     restart: unless-stopped
+    environment:
+      EMQX_AUTHENTICATION__1__HEADERS__AUTHORIZATION: Bearer ${EMQX_AUTH_SECRET:-replace-with-long-random-token}
+      EMQX_AUTHORIZATION__SOURCES__1__HEADERS__AUTHORIZATION: Bearer ${EMQX_AUTH_SECRET:-replace-with-long-random-token}
     expose:
       - '1883'
       - '8883'

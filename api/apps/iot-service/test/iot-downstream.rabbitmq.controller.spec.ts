@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { IotDownstreamRabbitmqController } from '../src/transport/iot-downstream.rabbitmq.controller';
+import { DownstreamConsumer } from '../src/rabbitmq/downstream.consumer';
 
 function createContext() {
   const calls = {
@@ -32,10 +32,10 @@ function createContext() {
   };
 }
 
-test('downstream controller skips already published outbox messages', async () => {
+test('downstream consumer skips already published outbox messages', async () => {
   const { context, calls } = createContext();
-  let providerCalled = false;
-  const controller = new IotDownstreamRabbitmqController(
+  let dispatchCalled = false;
+  const controller = new DownstreamConsumer(
     {
       parse() {
         return { deviceId: 'device-001' };
@@ -50,11 +50,8 @@ test('downstream controller skips already published outbox messages', async () =
       },
     } as never,
     {
-      getOrThrow() {
-        providerCalled = true;
-        return {
-          async publish() {},
-        };
+      async dispatch() {
+        dispatchCalled = true;
       },
     } as never,
     { debug() {}, warn() {}, info() {}, error() {} } as never,
@@ -74,7 +71,7 @@ test('downstream controller skips already published outbox messages', async () =
     context as never,
   );
 
-  assert.equal(providerCalled, false);
+  assert.equal(dispatchCalled, false);
   assert.equal(calls.ack, 1);
   assert.equal(calls.nack, 0);
 });

@@ -27,9 +27,12 @@ export class GrpcInvokerService {
     service: string;
     operation: string;
     requestId?: string;
+    timeoutMs?: number;
     call: () => Promise<T>;
   }): Promise<T> {
-    const timeoutMs = this.envService.getNumber('GATEWAY_GRPC_TIMEOUT_MS', 5000) ?? 5000;
+    const timeoutMs = input.timeoutMs
+      ?? this.envService.getNumber('GATEWAY_GRPC_TIMEOUT_MS', 5000)
+      ?? 5000;
     const retryCount = this.envService.getNumber('GATEWAY_GRPC_RETRY_COUNT', 1) ?? 1;
     const retryDelayMs = this.envService.getNumber('GATEWAY_GRPC_RETRY_DELAY_MS', 120) ?? 120;
 

@@ -92,9 +92,19 @@ export class EmqxIngressService {
     const requestId = resolveRequestId(body);
 
     const action = normalizeAction(body.action ?? body.access ?? body.permission);
+    const topic = pickString(body.topic);
 
-    if (isBrokerDownlinkClientId(clientId)) {
-      if (action !== 'publish') {
+    const isInternalServiceClient = isBrokerDownlinkClientId(clientId)
+      || isBrokerDownlinkX509Client({ body, clientId, username });
+    if (isInternalServiceClient) {
+      const allowed = isAllowedIotServiceAcl({
+        body,
+        clientId,
+        username,
+        action,
+        topic,
+      });
+      if (!allowed) {
         return {
           result: 'deny',
           is_superuser: false,
@@ -103,7 +113,7 @@ export class EmqxIngressService {
       }
       return {
         result: 'allow',
-        is_superuser: true,
+        is_superuser: false,
         client_attrs: {},
       };
     }
@@ -111,7 +121,6 @@ export class EmqxIngressService {
     const requestedDeviceId = pickString(body.deviceId) ?? username ?? clientId;
     const certificateFingerprint = pickCertificateFingerprint(body);
     const credentialId = pickCredentialId(body);
-    const topic = pickString(body.topic);
     if (!action || !topic) {
       const reason = !action ? 'invalid_action' : 'missing_topic';
       const businessError = getIotAccessErrorByReason(reason);
@@ -293,9 +302,9 @@ function pickString(value: unknown): string | undefined {
 }
 
 /**
- * biz-service 的 {@link EmqxProviderService} 会使用 `lumimax-biz-<uuid>` 形式的 client id，
- * 并可选携带 `EMQX_MQTT_USERNAME` / `EMQX_MQTT_PASSWORD`。
- * EMQX HTTP 鉴权必须放行这类身份，避免把平台下行发布误判为设备连接。
+ * iot-service 的共享订阅消费者与 EMQX MQTT 下行发布都会使用 `lumimax-iot-service-*`
+ * 形式的 client id，并可选携带 `EMQX_MQTT_USERNAME` / `EMQX_MQTT_PASSWORD`。
+ * EMQX HTTP 鉴权必须放行这类身份，避免把平台侧连接误判为设备连接。
  */
 function verifyBrokerDownlinkMqttAuth(
   body: Record<string, unknown>,
@@ -318,6 +327,84 @@ function verifyBrokerDownlinkMqttAuth(
     return username === expectedUser;
   }
   return username === undefined;
+}
+
+function isBrokerDownlinkX509Client(input: {
+  body: Record<string, unknown>;
+  clientId: string;
+  username: string | undefined;
+}): boolean {
+  const expectedUser = resolveInternalServiceUsername();
+  if (!expectedUser) {
+    return false;
+  }
+  if (input.username !== expectedUser) {
+    return false;
+  }
+  return true;
+}
+
+function resolveInternalServiceUsername(): string | undefined {
+  return pickString(getEnvString('EMQX_MQTT_USERNAME', 'lumimax_iot'));
+}
+
+function isAllowedIotServiceAcl(input: {
+  body?: Record<string, unknown>;
+  clientId: string;
+  username: string | undefined;
+  action: DeviceMqttAction | null;
+  topic: string | undefined;
+}): boolean {
+  const isLegacyClientId = isBrokerDownlinkClientId(input.clientId);
+  const isX509Client = Boolean(
+    input.body
+    && isBrokerDownlinkX509Client({
+      body: input.body,
+      clientId: input.clientId,
+      username: input.username,
+    }),
+  );
+  if (!isLegacyClientId && !isX509Client) {
+    return false;
+  }
+  if (!input.action || !input.topic) {
+    return false;
+  }
+  if (input.action === 'subscribe') {
+    return matchesSharedSubscriptionTopic(input.topic, { allowBareTopic: isX509Client });
+  }
+  if (input.action === 'publish') {
+    return matchesDownstreamResponseTopic(input.topic);
+  }
+  return false;
+}
+
+function matchesSharedSubscriptionTopic(
+  topic: string,
+  options: { allowBareTopic: boolean },
+): boolean {
+  const group = pickString(getEnvString('EMQX_SHARED_SUBSCRIPTION_GROUP')) ?? 'lumimax-iot';
+  const expectedPrefix = `$share/${group}/`;
+  if (topic.startsWith(expectedPrefix)) {
+    return matchesTopicPattern(topic.slice(expectedPrefix.length), 'v1/+/+/req');
+  }
+  if (!options.allowBareTopic) {
+    return false;
+  }
+  return matchesTopicPattern(topic, 'v1/+/+/req');
+}
+
+function matchesDownstreamResponseTopic(topic: string): boolean {
+  return matchesTopicPattern(topic, 'v1/+/+/res');
+}
+
+function matchesTopicPattern(topic: string, pattern: string): boolean {
+  const topicParts = topic.split('/');
+  const patternParts = pattern.split('/');
+  if (topicParts.length !== patternParts.length) {
+    return false;
+  }
+  return patternParts.every((part, index) => part === '+' || part === topicParts[index]);
 }
 
 function timingSafeEqualUtf8(expected: string, actual: string): boolean {

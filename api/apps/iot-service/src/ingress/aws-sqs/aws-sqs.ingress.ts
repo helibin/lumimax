@@ -5,16 +5,18 @@ import { getEnvNumber, getEnvString, resolveConfiguredIotReceiveMode, resolveCon
 import { IotIngressAdapterRegistry } from '@lumimax/iot-kit';
 import { AppLogger } from '@lumimax/logger';
 import { SqsConsumerService } from '@lumimax/mq';
-import { IotIngestService } from '../pipeline/iot-ingest.service';
+import { IotUplinkBridgeService } from '../../transport/iot-uplink-bridge.service';
+import { resolveIotBridgeEventPattern } from '../../transport/iot-bridge.rabbitmq';
 
 @Injectable()
-export class AwsIotSqsConsumer implements OnModuleInit, OnApplicationShutdown {
+export class AwsSqsIngress implements OnModuleInit, OnApplicationShutdown {
   private running = false;
 
   constructor(
     @Inject(AppLogger) private readonly logger: AppLogger,
     @Inject(SqsConsumerService) private readonly sqsConsumerService: SqsConsumerService,
-    @Inject(IotIngestService) private readonly iotIngestService: IotIngestService,
+    @Inject(IotUplinkBridgeService)
+    private readonly iotUplinkBridgeService: IotUplinkBridgeService,
     @Inject(IotIngressAdapterRegistry)
     private readonly iotIngressAdapterRegistry: IotIngressAdapterRegistry,
   ) {}
@@ -22,39 +24,32 @@ export class AwsIotSqsConsumer implements OnModuleInit, OnApplicationShutdown {
   async onModuleInit(): Promise<void> {
     const vendor = resolveConfiguredIotVendor();
     if (vendor !== 'aws') {
-      this.logger.log(
-        'AWS IoT SQS 消费器未启用',
-        { vendor, suppressRequestContext: true },
-        AwsIotSqsConsumer.name,
-      );
       return;
     }
-
     const receiveMode = resolveConfiguredIotReceiveMode();
     if (receiveMode !== 'mq') {
       this.logger.log(
-        'AWS IoT SQS 消费器未启用',
+        'AWS SQS ingress 未启用',
         { receiveMode, suppressRequestContext: true },
-        AwsIotSqsConsumer.name,
+        AwsSqsIngress.name,
       );
       return;
     }
-
     const queueUrl = getEnvString('AWS_SQS_QUEUE_URL', '') || '';
     if (!queueUrl) {
       this.logger.warn(
-        'AWS IoT SQS 消费器已启用，但队列地址为空',
+        'AWS SQS ingress 已启用，但队列地址为空',
         { suppressRequestContext: true },
-        AwsIotSqsConsumer.name,
+        AwsSqsIngress.name,
       );
       return;
     }
 
     this.running = true;
     this.logger.log(
-      `AWS IoT SQS 消费器启动 queue=${summarizeQueueUrl(queueUrl)}`,
+      `AWS SQS ingress 启动 queue=${summarizeQueueUrl(queueUrl)}`,
       { suppressRequestContext: true },
-      AwsIotSqsConsumer.name,
+      AwsSqsIngress.name,
     );
     void this.pollLoop(queueUrl);
   }
@@ -77,24 +72,22 @@ export class AwsIotSqsConsumer implements OnModuleInit, OnApplicationShutdown {
           visibilityTimeout,
           batchSize,
         });
-
         if (envelopes.length === 0) {
           await delay(idleDelayMs);
           continue;
         }
-
         for (const envelope of envelopes) {
           await this.handleEnvelope(queueUrl, envelope);
         }
       } catch (error) {
         this.logger.error(
-          'AWS IoT SQS 轮询失败',
+          'AWS SQS ingress 轮询失败',
           {
             reason: error instanceof Error ? error.message : String(error),
             queueUrl,
             suppressRequestContext: true,
           },
-          AwsIotSqsConsumer.name,
+          AwsSqsIngress.name,
         );
         await delay(Math.max(idleDelayMs, 2000));
       }
@@ -110,42 +103,32 @@ export class AwsIotSqsConsumer implements OnModuleInit, OnApplicationShutdown {
       body: unknown;
     },
   ): Promise<void> {
-    const vendor = resolveConfiguredIotVendor();
-    const parsed = this.iotIngressAdapterRegistry.getOrThrow(vendor, 'queue').normalize({
+    const parsed = this.iotIngressAdapterRegistry.getOrThrow('aws', 'queue').normalize({
       channel: 'queue',
       body: envelope.body,
     });
     const requestId = parsed.requestId ?? envelope.requestId ?? envelope.messageId;
     try {
-      const result = await this.iotIngestService.ingestCloudMessage({
+      await this.iotUplinkBridgeService.bridgeUplink({
         vendor: parsed.vendor,
         topic: parsed.topic,
         payload: parsed.payload,
         receivedAt: parsed.receivedAt,
         requestId,
+      }, {
+        eventName: resolveIotBridgeEventPattern(parsed.topic),
+        transport: 'mqtt',
+        meta: {
+          ingress: 'aws-sqs',
+          messageId: envelope.messageId,
+        },
       });
-
       if (envelope.receiptHandle) {
         await this.sqsConsumerService.ack(queueUrl, envelope.receiptHandle);
       }
-      const normalized = result.normalized;
-      const duplicate = result.result?.duplicate ?? false;
-      const logMeta = {
-        requestId: normalized.requestId,
-        idLabel: 'ReqId' as const,
-        messageId: envelope.messageId,
-        deviceId: normalized.deviceId,
-        topic: normalized.topic,
-        topicKind: normalized.topicKind,
-        event: normalized.event,
-        duplicate,
-      };
-      if (!duplicate) {
-        this.logger.debug('AWS IoT SQS 消息确认完成', logMeta, AwsIotSqsConsumer.name);
-      }
     } catch (error) {
       this.logger.error(
-        'AWS IoT SQS 消息处理失败',
+        'AWS SQS ingress 消息处理失败',
         {
           requestId,
           idLabel: 'ReqId',
@@ -157,7 +140,7 @@ export class AwsIotSqsConsumer implements OnModuleInit, OnApplicationShutdown {
           reason: error instanceof Error ? error.message : String(error),
           rawMessage: envelope.body,
         },
-        AwsIotSqsConsumer.name,
+        AwsSqsIngress.name,
       );
     }
   }

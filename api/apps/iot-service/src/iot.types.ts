@@ -1,4 +1,5 @@
 import type { CloudIotVendorName } from '@lumimax/config';
+import type { NormalizedIotMessage } from './domain/normalized-iot-message';
 
 export type { CloudIotVendorName } from '@lumimax/config';
 
@@ -21,18 +22,7 @@ export interface IncomingBizIotMessage {
   receivedAt?: number;
 }
 
-export interface NormalizedBizIotMessage {
-  vendor: CloudIotVendorName;
-  topic: string;
-  deviceId: string;
-  topicKind: BizIotTopicKind;
-  requestId: string;
-  event: string;
-  locale: string;
-  payload: Record<string, unknown>;
-  timestamp: number;
-  receivedAt: Date;
-}
+export type NormalizedBizIotMessage = NormalizedIotMessage;
 
 export interface BizIotDownlinkMessage {
   topicKind: BizIotTopicKind;

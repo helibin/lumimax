@@ -15,6 +15,7 @@ import { IotDownlinkService } from './transport/iot-downlink.service';
 import { IotEnvelopeService } from './pipeline/iot-envelope.service';
 import { TopicParserService } from './pipeline/topic-parser.service';
 import { IotBridgePublisherService } from './transport/iot-bridge.publisher.service';
+import { DeviceProtocolDebugService } from './debug/device-protocol-debug.service';
 import { IotBizEventsRabbitmqController } from './transport/iot-biz-events.rabbitmq.controller';
 import { IOT_DOWNLINK } from './transport/iot-downlink.port';
 import { IOT_MESSAGE_PUBLISHER } from './transport/iot-message-publisher.port';
@@ -54,6 +55,7 @@ import { IOT_MESSAGE_PUBLISHER } from './transport/iot-message-publisher.port';
     IotEnvelopeService,
     IotNormalizerService,
     IotDispatcherService,
+    DeviceProtocolDebugService,
     IotIngestService,
     IotMessageRegistryService,
     IotBridgePublisherService,
@@ -64,6 +66,7 @@ import { IOT_MESSAGE_PUBLISHER } from './transport/iot-message-publisher.port';
     IotEnvelopeService,
     IotNormalizerService,
     IotDispatcherService,
+    DeviceProtocolDebugService,
     IotIngestService,
     IotMessageRegistryService,
     IotDownlinkService,

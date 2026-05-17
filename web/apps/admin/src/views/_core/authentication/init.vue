@@ -6,52 +6,21 @@ import { IconifyIcon } from '@lumimax/icons';
 import { Alert, Button, Card, Descriptions, Radio, Result, message } from 'ant-design-vue';
 
 import type { VbenFormSchema } from '#/adapter/form';
-import { getCachedInitStatusApi, getInitStatusApi, initializeSystemApi, setupRabbitmqApi } from '#/api';
+import type { AuthApi } from '#/api/core/auth';
+import { getCachedInitStatusApi, getInitStatusApi, initializeSystemApi, setupEmqxCertsApi, setupRabbitmqApi } from '#/api';
 import { useVbenForm, z } from '#/adapter/form';
 import { $t } from '#/locales';
 
 defineOptions({ name: 'SystemInitialize' });
 
-interface InitStatus {
-  databaseReady: boolean;
-  initialized: boolean;
-  initializedAt: null | string;
-  rabbitmq: {
-    managementUrl: string;
-    profiles: Array<{
-      exchange: {
-        name: string;
-        ready: boolean;
-      };
-      extraExchanges: Array<{
-        name: string;
-        ready: boolean;
-      }>;
-      name: string;
-      queues: Array<{
-        name: string;
-        ready: boolean;
-      }>;
-      ready: boolean;
-      vhost: string;
-      warnings: string[];
-    }>;
-    ready: boolean;
-    warnings: string[];
-  };
-  rabbitmqReady: boolean;
-  seedMode: string;
-  usageMode: string;
-  warnings: string[];
-}
-
 const router = useRouter();
 
 const loading = ref(false);
 const rabbitmqSetupLoading = ref(false);
+const certSetupLoading = ref(false);
 const submitLoading = ref(false);
 const currentStep = ref(0);
-const initStatus = ref<InitStatus | null>(null);
+const initStatus = ref<AuthApi.InitStatusResult | null>(null);
 const loadError = ref('');
 
 const form = ref({
@@ -188,13 +157,16 @@ const confirmationNotes = computed(() => [
 ]);
 
 const hasWarnings = computed(() => (initStatus.value?.warnings?.length ?? 0) > 0);
+const certsReady = computed(() => initStatus.value?.certsReady ?? false);
+const certWarnings = computed(() => initStatus.value?.certs?.warnings ?? []);
+const certFiles = computed(() => initStatus.value?.certs?.files ?? []);
 const rabbitmqReady = computed(() => initStatus.value?.rabbitmqReady ?? false);
 const rabbitmqProfiles = computed(() => initStatus.value?.rabbitmq?.profiles ?? []);
 const rabbitmqWarnings = computed(() => initStatus.value?.rabbitmq?.warnings ?? []);
 
 const canMoveNext = computed(() => {
   if (currentStep.value === 0) {
-    return Boolean(initStatus.value?.databaseReady && initStatus.value?.rabbitmqReady);
+    return Boolean(initStatus.value?.databaseReady && initStatus.value?.rabbitmqReady && initStatus.value?.certsReady);
   }
   if (currentStep.value === 1) {
     return (
@@ -233,11 +205,15 @@ async function loadStatus() {
 function nextStep() {
   if (!canMoveNext.value) {
     if (currentStep.value === 0) {
-      message.warning(
-        initStatus.value?.databaseReady
-          ? $t('init.setup.messages.rabbitmqNotReady')
-          : $t('init.setup.messages.databaseNotReady'),
-      );
+      if (!initStatus.value?.databaseReady) {
+        message.warning($t('init.setup.messages.databaseNotReady'));
+        return;
+      }
+      if (!initStatus.value?.rabbitmqReady) {
+        message.warning($t('init.setup.messages.rabbitmqNotReady'));
+        return;
+      }
+      message.warning($t('init.setup.messages.certsNotReady'));
       return;
     }
     if (currentStep.value === 1) {
@@ -266,6 +242,7 @@ async function submitInitialization() {
   try {
     await initializeSystemApi({
       email: form.value.email.trim() || undefined,
+      generateBootstrapCerts: true,
       nickname: form.value.nickname.trim(),
       password: form.value.password,
       usageMode: form.value.usageMode,
@@ -281,6 +258,23 @@ async function submitInitialization() {
     message.error(text);
   } finally {
     submitLoading.value = false;
+  }
+}
+
+async function setupEmqxCerts() {
+  if (certSetupLoading.value) {
+    return;
+  }
+  certSetupLoading.value = true;
+  try {
+    await setupEmqxCertsApi();
+    await loadStatus();
+    message.success($t('init.setup.messages.certsInitializeSuccess'));
+  } catch (error) {
+    const text = error instanceof Error ? error.message : $t('init.setup.messages.certsInitializeFailed');
+    message.error(text);
+  } finally {
+    certSetupLoading.value = false;
   }
 }
 
@@ -405,6 +399,16 @@ onMounted(loadStatus);
                   }}
                 </div>
               </div>
+              <div class="info-tile">
+                <div class="info-label">{{ $t('init.setup.certsStep.connectionStatus') }}</div>
+                <div class="info-value" :class="certsReady ? 'success-text' : 'warning-text'">
+                  {{
+                    certsReady
+                      ? $t('init.setup.certsStep.ready')
+                      : $t('init.setup.certsStep.unavailable')
+                  }}
+                </div>
+              </div>
             </div>
 
             <Alert
@@ -478,6 +482,54 @@ onMounted(loadStatus);
                 </div>
               </div>
             </div>
+            <div class="rabbitmq-panel">
+              <div class="rabbitmq-panel-header">
+                <div>
+                  <h3>{{ $t('init.setup.certsStep.heading') }}</h3>
+                  <p>{{ $t('init.setup.certsStep.body') }}</p>
+                </div>
+                <Button
+                  type="primary"
+                  ghost
+                  :loading="certSetupLoading"
+                  @click="setupEmqxCerts"
+                >
+                  <template #icon>
+                    <IconifyIcon icon="lucide:shield-check" />
+                  </template>
+                  {{ $t('init.setup.buttons.initializeCerts') }}
+                </Button>
+              </div>
+
+              <div class="rabbitmq-profile-card">
+                <div class="rabbitmq-profile-top">
+                  <div>
+                    <div class="rabbitmq-profile-name">{{ initStatus?.certs?.certDir ?? '-' }}</div>
+                    <div class="rabbitmq-profile-meta">
+                      {{ $t('init.setup.certsStep.directory') }}
+                    </div>
+                  </div>
+                  <span :class="['rabbitmq-profile-badge', certsReady ? 'is-ready' : 'is-pending']">
+                    {{
+                      certsReady
+                        ? $t('init.setup.certsStep.ready')
+                        : $t('init.setup.certsStep.pending')
+                    }}
+                  </span>
+                </div>
+
+                <div class="rabbitmq-resource-list">
+                  <div
+                    v-for="file in certFiles"
+                    :key="file.path"
+                    class="rabbitmq-resource-item"
+                  >
+                    <span>{{ file.name }}</span>
+                    <strong>{{ file.exists ? 'OK' : '...' }}</strong>
+                  </div>
+                </div>
+              </div>
+            </div>
             <Alert
               v-if="hasWarnings"
               class="status-alert"
@@ -492,6 +544,14 @@ onMounted(loadStatus);
               show-icon
               :message="$t('init.setup.rabbitmqStep.warningTitle')"
               :description="rabbitmqWarnings.join('；')"
+            />
+            <Alert
+              v-if="certWarnings.length > 0"
+              class="status-alert"
+              type="warning"
+              show-icon
+              :message="$t('init.setup.certsStep.warningTitle')"
+              :description="certWarnings.join('；')"
             />
           </template>
 

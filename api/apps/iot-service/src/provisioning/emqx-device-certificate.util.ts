@@ -39,7 +39,10 @@ type DeviceCertificatePayload = {
 export function issueEmqxDeviceCertificate(
   input: IssueDeviceCertificateInput,
 ): DeviceCertificatePayload {
-  const endpoint = pickString(getEnvString('EMQX_BROKER_URL')) ?? '127.0.0.1:8883';
+  const endpoint =
+    pickString(getEnvString('EMQX_DEVICE_ENDPOINT'))
+    ?? pickString(getEnvString('EMQX_BROKER_URL'))
+    ?? '127.0.0.1:8883';
   const region = pickString(getEnvString('EMQX_REGION')) ?? 'self-hosted';
   const rootCaPem = resolvePemValue('EMQX_ROOT_CA_PEM', 'EMQX_ROOT_CA_PEM_PATH');
   const rootCaKeyPem = resolvePemValue('EMQX_ROOT_CA_KEY_PEM', 'EMQX_ROOT_CA_KEY_PEM_PATH');

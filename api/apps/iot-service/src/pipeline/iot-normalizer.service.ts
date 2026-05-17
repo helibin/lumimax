@@ -5,8 +5,8 @@ import {
   BizIotTopicKind,
   type CloudIotVendorName,
   type IncomingBizIotMessage,
-  type NormalizedBizIotMessage,
 } from '../iot.types';
+import type { NormalizedIotMessage } from '../domain/normalized-iot-message';
 import { IotEnvelopeService } from './iot-envelope.service';
 import { TopicParserService } from './topic-parser.service';
 
@@ -17,7 +17,7 @@ export class IotNormalizerService {
     @Inject(IotEnvelopeService) private readonly iotEnvelopeService: IotEnvelopeService,
   ) {}
 
-  normalize(input: IncomingBizIotMessage): NormalizedBizIotMessage {
+  normalize(input: IncomingBizIotMessage): NormalizedIotMessage {
     try {
       const parsedTopic = this.topicParserService.parse(input.topic);
       const decoded = this.iotEnvelopeService.validate<Record<string, unknown>>(
@@ -54,7 +54,7 @@ export class IotNormalizerService {
 
 function tryNormalizeCloudLifecycle(
   input: IncomingBizIotMessage,
-): NormalizedBizIotMessage | null {
+): NormalizedIotMessage | null {
   if (input.vendor === 'emqx') {
     return tryNormalizeEmqxLifecycle(input);
   }
@@ -130,7 +130,7 @@ function startsWithReservedChannel(event: string): boolean {
 
 function tryNormalizeAwsLifecycle(
   input: IncomingBizIotMessage,
-): NormalizedBizIotMessage | null {
+): NormalizedIotMessage | null {
   const match = input.topic.match(/^\$aws\/events\/presence\/(connected|disconnected)\/(.+)$/);
   if (!match) {
     return null;
@@ -166,7 +166,7 @@ function tryNormalizeAwsLifecycle(
 
 function tryNormalizeEmqxLifecycle(
   input: IncomingBizIotMessage,
-): NormalizedBizIotMessage | null {
+): NormalizedIotMessage | null {
   const payload = asRecord(input.payload);
   const topic = String(input.topic ?? '').trim();
   const rawEvent =

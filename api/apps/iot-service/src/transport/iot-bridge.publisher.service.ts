@@ -1,6 +1,6 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { AppLogger } from '@lumimax/logger';
-import { RabbitMQService } from '@lumimax/mq';
+import { RabbitMQConfirmPublisherService, RabbitMQService } from '@lumimax/mq';
 import {
   IOT_BRIDGE_DOWNSTREAM_PUBLISH_EVENT,
   resolveIotBridgeEventPattern,
@@ -18,6 +18,8 @@ export class IotBridgePublisherService implements IotMessagePublisherPort {
   constructor(
     @Optional() @Inject(RabbitMQService)
     private readonly rabbitmqService?: RabbitMQService,
+    @Optional() @Inject(RabbitMQConfirmPublisherService)
+    private readonly rabbitmqConfirmPublisherService?: RabbitMQConfirmPublisherService,
     @Optional() @Inject(AppLogger)
     private readonly logger?: AppLogger,
   ) {}
@@ -27,11 +29,11 @@ export class IotBridgePublisherService implements IotMessagePublisherPort {
   }
 
   async publishUplink(input: PublishIotUplinkInput): Promise<void> {
-    if (!this.rabbitmqService) {
-      throw new Error('IoT bridge 的 RabbitMQ 发布器不可用');
+    if (!this.rabbitmqConfirmPublisherService) {
+      throw new Error('IoT bridge 的 RabbitMQ confirm 发布器不可用');
     }
     const eventName = resolveIotBridgeEventPattern(input.topic);
-    await this.rabbitmqService.emitEvent(eventName, input, {
+    await this.rabbitmqConfirmPublisherService.emitEventConfirmed(eventName, input, {
       requestId: input.requestId,
       source: 'iot-bridge',
     });

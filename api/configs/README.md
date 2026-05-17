@@ -146,7 +146,7 @@ cp configs/iot-service.env.example configs/development/iot-service.env
 - `STORAGE_ACCESS_KEY_ID` / `STORAGE_ACCESS_KEY_SECRET`（base-service 对象存储）
 - `IOT_ACCESS_KEY_ID` / `IOT_ACCESS_KEY_SECRET`（iot-service EMQX HTTP API / AWS IoT / SQS）
 - `IOT_RECEIVE_MODE`
-  默认 `mq`；`mq` 表示上行/下行走消息队列通道，AWS 对应 SQS，EMQX 对应 RabbitMQ；`callback` 适合 EMQX webhook / internal auth 链路
+  默认 `mq`；`mq` 表示下行走消息队列通道，AWS 上行对应 SQS，EMQX 上行对应 `iot-service` MQTT 共享订阅；`callback` 适合 EMQX webhook / internal auth 链路
 - `IOT_VENDOR`
   默认 `emqx`；当前推荐运行形态也是 EMQX 为主、AWS 为辅
 - `AWS_SQS_QUEUE_URL`（当 `IOT_RECEIVE_MODE=mq` 且 vendor=aws 时）
@@ -154,8 +154,9 @@ cp configs/iot-service.env.example configs/development/iot-service.env
 - `AWS_IOT_ENDPOINT`
 - `AWS_IOT_POLICY_NAME`
 - `EMQX_BROKER_URL`
-- `EMQX_PUBLISH_MODE`
-  默认 `http`；可选 `http` / `mqtt`
+  `iot-service` 自己连接 broker 的地址。当前推荐方案 A：`mqtts://emqx:8883`，并同时配置 `EMQX_MQTT_CLIENT_CERT_*` 与 `EMQX_ROOT_CA_PEM*`。
+- `EMQX_DEVICE_ENDPOINT`
+  设备侧下发的 broker 地址，推荐显式配置为 `mqtts://<device-facing-host>:8883`。未设置时，设备证书签发会回退到 `EMQX_BROKER_URL`。
 - `EMQX_HTTP_BASE_URL`
   **推荐显式配置**。Compose 同网：`http://emqx:18083`；宿主机调试：`http://127.0.0.1:28083`。未设置时从 `EMQX_BROKER_URL` 推导（8883→18083）。**18083 为明文 HTTP**，勿写 `https://…:18083`。详见 [`docs/emqx-self-hosted-runbook.md`](../../docs/emqx-self-hosted-runbook.md) §4.2。
 - `EMQX_HTTP_TLS_INSECURE`

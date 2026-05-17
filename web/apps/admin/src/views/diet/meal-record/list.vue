@@ -1,19 +1,19 @@
 <script lang="ts" setup>
 import type { VxeTableGridOptions } from '#/adapter/vxe-table';
-import type { WeighingApi } from '#/api';
+import type { DietApi } from '#/api';
 
 import { Page, useVbenDrawer } from '@lumimax/common-ui';
 
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
-import { getWeighingRecordListApi } from '#/api';
+import { getMealRecordListApi } from '#/api';
 import { $t } from '#/locales';
 
 import { useColumns, useFilterSchema } from './data';
 import Detail from './modules/detail.vue';
 
-type RecordActionClickParams = {
+type MealActionClickParams = {
   code: string;
-  row: WeighingApi.WeighingRecordItem;
+  row: DietApi.MealRecordItem;
 };
 
 const [DetailDrawer, detailDrawerApi] = useVbenDrawer({
@@ -33,7 +33,7 @@ const [Grid] = useVbenVxeGrid({
     proxyConfig: {
       ajax: {
         query: async ({ page }, formValues) => {
-          const response = await getWeighingRecordListApi({
+          const response = await getMealRecordListApi({
             page: page.currentPage,
             pageSize: page.pageSize,
           });
@@ -45,8 +45,8 @@ const [Grid] = useVbenVxeGrid({
           }
           const items = response.items.filter(
             (item) =>
-              item.id.toLowerCase().includes(keyword) ||
-              item.deviceId.toLowerCase().includes(keyword) ||
+              item.mealRecordId.toLowerCase().includes(keyword) ||
+              (item.deviceId ?? '').toLowerCase().includes(keyword) ||
               (item.userId ?? '').toLowerCase().includes(keyword),
           );
           return {
@@ -57,7 +57,7 @@ const [Grid] = useVbenVxeGrid({
       },
     },
     rowConfig: {
-      keyField: 'id',
+      keyField: 'mealRecordId',
     },
     toolbarConfig: {
       custom: true,
@@ -66,10 +66,10 @@ const [Grid] = useVbenVxeGrid({
       search: true,
       zoom: true,
     },
-  } as VxeTableGridOptions<WeighingApi.WeighingRecordItem>,
+  } as VxeTableGridOptions<DietApi.MealRecordItem>,
 });
 
-function onActionClick({ code, row }: RecordActionClickParams) {
+function onActionClick({ code, row }: MealActionClickParams) {
   if (code === 'detail') {
     detailDrawerApi.setData(row).open();
   }
@@ -79,6 +79,6 @@ function onActionClick({ code, row }: RecordActionClickParams) {
 <template>
   <Page auto-content-height>
     <DetailDrawer />
-    <Grid :table-title="$t('diet.title')" />
+    <Grid :table-title="$t('diet.mealTitle')" />
   </Page>
 </template>

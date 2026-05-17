@@ -402,6 +402,13 @@ export class AdminBusinessController {
     return this.diet(req, 'meals', 'ListMealItems', { id }, true);
   }
 
+  @Get('meal-items/:itemId')
+  @AdminPermission('meal:view')
+  @ApiOperation({ summary: '查询餐次条目详情（含识别快照）' })
+  getMealItem(@Req() req: any, @Param('itemId') itemId: string) {
+    return this.diet(req, 'meals', 'GetMealItem', { itemId });
+  }
+
   @Get('foods')
   @AdminPermission('food:view')
   @ApiOperation({ summary: '查询食物库列表' })
@@ -413,6 +420,13 @@ export class AdminBusinessController {
   @AdminPermission('food:view')
   getFood(@Req() req: any, @Param('id') id: string) {
     return this.diet(req, 'foods', 'GetFood', { id });
+  }
+
+  @Get('user-common-foods')
+  @AdminPermission('food:view')
+  @ApiOperation({ summary: '查询用户沉淀食物数据' })
+  listUserCommonFoods(@Req() req: any, @Query() query: AdminPageQueryDto) {
+    return this.diet(req, 'foods', 'ListUserCommonFoods', toListPayload(query), true);
   }
 
   @Post('foods')

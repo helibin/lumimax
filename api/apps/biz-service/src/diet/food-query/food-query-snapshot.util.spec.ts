@@ -49,6 +49,26 @@ test('applyFoodQuerySnapshots stores query and candidate payloads', () => {
     },
     routing: { routeKey: 'default', providerCodes: ['internal', 'usda'], queryNames: ['apple'] },
     recognition: { provider: 'vision', status: 'success', confidence: 0.9 },
+    debug: {
+      providerTraces: [
+        {
+          provider: 'usda',
+          stage: 'search',
+          status: 'success',
+          durationMs: 12,
+          candidateCount: 1,
+          stop: true,
+          output: {
+            candidates: [
+              {
+                sourceCode: 'usda',
+                displayName: 'Apple',
+              },
+            ],
+          },
+        },
+      ],
+    },
   };
 
   applyFoodQuerySnapshots(item, result);
@@ -58,6 +78,12 @@ test('applyFoodQuerySnapshots stores query and candidate payloads', () => {
   assert.equal(item.resultSnapshot?.displayName, 'Apple');
   assert.equal(item.rawCandidates?.length, 1);
   assert.equal(item.selectedCandidate?.sourceCode, 'usda');
+  assert.equal(
+    (
+      item.querySnapshot?.debug as { providerTraces?: Array<{ provider?: string }> } | undefined
+    )?.providerTraces?.[0]?.provider,
+    'usda',
+  );
 });
 
 test('applyConfirmedSnapshot links food id after confirm', () => {

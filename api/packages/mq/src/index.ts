@@ -6,5 +6,6 @@ export * from './rabbitmq/rabbitmq.event';
 export * from './rabbitmq/rabbitmq-idempotency.service';
 export * from './rabbitmq/rabbitmq.module';
 export * from './rabbitmq/rabbitmq.profile';
+export * from './rabbitmq/rabbitmq-confirm-publisher.service';
 export * from './rabbitmq/rabbitmq.service';
 export * from './rabbitmq/rabbitmq-topology';

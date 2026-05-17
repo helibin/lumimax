@@ -14,7 +14,7 @@ test('iot envelope validates standard protocol payload', () => {
       version: '1.0',
     },
     data: {
-      imageKey: 'tmp-file/device/01habcdefghjkmnpqrstvwxyz0/demo.png',
+      target: 'tmp-file/device/01habcdefghjkmnpqrstvwxyz0/demo.png',
     },
   });
   assert.equal(decoded.meta.requestId, '01h0000000000000000000101a');

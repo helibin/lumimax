@@ -17,15 +17,27 @@ test('pickLocalizedFoodName prefers localized provider field for zh locale', () 
   assert.equal(result, '原味白奶酪');
 });
 
-test('pickLocalizedFoodName falls back to chinese query alias for zh locale', () => {
+test('pickLocalizedFoodName uses chinese query alias only when explicitly allowed', () => {
   const result = pickLocalizedFoodName({
     locale: 'zh-CN',
     fallbackName: 'Fromage Blanc Nature',
     queryName: '原味奶酪',
     aliases: ['Fromage Blanc Nature', '原味奶酪'],
+    allowQueryAliasFallback: true,
   });
 
   assert.equal(result, '原味奶酪');
+});
+
+test('pickLocalizedFoodName keeps provider english name for zh locale without localized fields', () => {
+  const result = pickLocalizedFoodName({
+    locale: 'zh-CN',
+    fallbackName: 'KIRKLAND SIGNATURE, STRAWBERRY SPREAD',
+    queryName: '草莓',
+    aliases: ['Strawberry Spread'],
+  });
+
+  assert.equal(result, 'KIRKLAND SIGNATURE, STRAWBERRY SPREAD');
 });
 
 test('pickLocalizedFoodName keeps fallback name when no localized candidate exists', () => {

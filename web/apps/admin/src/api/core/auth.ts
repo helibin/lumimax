@@ -48,7 +48,23 @@ export namespace AuthApi {
     warnings: string[];
   }
 
+  export interface EmqxBootstrapCertFile {
+    exists: boolean;
+    name: string;
+    path: string;
+  }
+
+  export interface EmqxBootstrapCertStatus {
+    certDir: string;
+    files: EmqxBootstrapCertFile[];
+    ready: boolean;
+    warnings: string[];
+    writable: boolean;
+  }
+
   export interface InitStatusResult {
+    certs: EmqxBootstrapCertStatus;
+    certsReady: boolean;
     databaseReady: boolean;
     initialized: boolean;
     initializedAt: null | string;
@@ -65,6 +81,7 @@ export namespace AuthApi {
     password: string;
     usageMode?: string;
     username: string;
+    generateBootstrapCerts?: boolean;
   }
 }
 
@@ -133,13 +150,29 @@ export async function getInitStatusApi() {
 }
 
 export async function initializeSystemApi(data: AuthApi.InitializeParams) {
-  const result = await requestClient.post<{ initialized: boolean; usageMode: string; username: string }>(
+  const result = await requestClient.post<{
+    certs: AuthApi.EmqxBootstrapCertStatus;
+    certsReady: boolean;
+    initialized: boolean;
+    usageMode: string;
+    username: string;
+  }>(
     '/admin/system/setup',
     {
       ...data,
       password: CryptoJS.MD5(data.password).toString(),
     },
   );
+  clearInitStatusCache();
+  return result;
+}
+
+export async function setupEmqxCertsApi() {
+  const result = await requestClient.post<{
+    certs: AuthApi.EmqxBootstrapCertStatus;
+    certsReady: boolean;
+    warnings: string[];
+  }>('/admin/system/emqx-certs/setup');
   clearInitStatusCache();
   return result;
 }

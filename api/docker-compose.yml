@@ -167,19 +167,19 @@ services:
       AWS_SQS_VISIBILITY_TIMEOUT: ${AWS_SQS_VISIBILITY_TIMEOUT:-60}
       AWS_SQS_BATCH_SIZE: ${AWS_SQS_BATCH_SIZE:-5}
       AWS_SQS_IDLE_DELAY_MS: ${AWS_SQS_IDLE_DELAY_MS:-1000}
-      EMQX_BROKER_URL: ${EMQX_BROKER_URL:-}
+      EMQX_BROKER_URL: ${EMQX_BROKER_URL:-mqtts://emqx:8883}
+      EMQX_DEVICE_ENDPOINT: ${EMQX_DEVICE_ENDPOINT:-}
       EMQX_REGION: ${EMQX_REGION:-}
       EMQX_ROOT_CA_PEM: ${EMQX_ROOT_CA_PEM:-}
       EMQX_ROOT_CA_KEY_PEM: ${EMQX_ROOT_CA_KEY_PEM:-}
-      EMQX_ROOT_CA_PEM_PATH: ${EMQX_ROOT_CA_PEM_PATH:-}
-      EMQX_ROOT_CA_KEY_PEM_PATH: ${EMQX_ROOT_CA_KEY_PEM_PATH:-}
-      EMQX_MQTT_USERNAME: ${EMQX_MQTT_USERNAME:-}
+      EMQX_ROOT_CA_KEY_PEM_PATH: ${EMQX_ROOT_CA_KEY_PEM_PATH:-/app/certs/emqx/ca.key}
+      EMQX_MQTT_USERNAME: ${EMQX_MQTT_USERNAME:-lumimax_iot}
       EMQX_MQTT_PASSWORD: ${EMQX_MQTT_PASSWORD:-}
       EMQX_MQTT_CLIENT_CERT_PEM: ${EMQX_MQTT_CLIENT_CERT_PEM:-}
       EMQX_MQTT_CLIENT_KEY_PEM: ${EMQX_MQTT_CLIENT_KEY_PEM:-}
-      EMQX_MQTT_CLIENT_CERT_PEM_PATH: ${EMQX_MQTT_CLIENT_CERT_PEM_PATH:-}
-      EMQX_MQTT_CLIENT_KEY_PEM_PATH: ${EMQX_MQTT_CLIENT_KEY_PEM_PATH:-}
-      EMQX_PUBLISH_MODE: ${EMQX_PUBLISH_MODE:-http}
+      EMQX_MQTT_CLIENT_CERT_PEM_PATH: ${EMQX_MQTT_CLIENT_CERT_PEM_PATH:-/app/certs/emqx/iot-service.crt}
+      EMQX_MQTT_CLIENT_KEY_PEM_PATH: ${EMQX_MQTT_CLIENT_KEY_PEM_PATH:-/app/certs/emqx/iot-service.key}
+      EMQX_ROOT_CA_PEM_PATH: ${EMQX_ROOT_CA_PEM_PATH:-/app/certs/emqx/ca.crt}
       EMQX_HTTP_BASE_URL: ${EMQX_HTTP_BASE_URL:-}
       EMQX_HTTP_TLS_INSECURE: ${EMQX_HTTP_TLS_INSECURE:-}
       EMQX_API_KEY: ${EMQX_API_KEY:-}
@@ -199,6 +199,8 @@ services:
       start_period: 20s
     networks:
       - lumimax
+    volumes:
+      - ../docker/emqx/certs:/app/certs/emqx:ro
 
   gateway:
     build:
@@ -236,6 +238,10 @@ services:
       # Must match biz-service for IoT HTTP ingest guards (emqx+mq blocks gateway uplink)
       IOT_RECEIVE_MODE: ${IOT_RECEIVE_MODE:-mq}
       IOT_VENDOR: ${IOT_VENDOR:-emqx}
+      EMQX_MQTT_CLIENT_CERT_PEM_PATH: ${EMQX_MQTT_CLIENT_CERT_PEM_PATH:-/app/certs/emqx/iot-service.crt}
+      EMQX_MQTT_CLIENT_KEY_PEM_PATH: ${EMQX_MQTT_CLIENT_KEY_PEM_PATH:-/app/certs/emqx/iot-service.key}
+      EMQX_ROOT_CA_PEM_PATH: ${EMQX_ROOT_CA_PEM_PATH:-/app/certs/emqx/ca.crt}
+      EMQX_ROOT_CA_KEY_PEM_PATH: ${EMQX_ROOT_CA_KEY_PEM_PATH:-/app/certs/emqx/ca.key}
     healthcheck:
       test:
         [
@@ -248,6 +254,8 @@ services:
       timeout: 5s
       retries: 10
       start_period: 20s
+    volumes:
+      - ../docker/emqx/certs:/app/certs/emqx
     networks:
       - lumimax
 

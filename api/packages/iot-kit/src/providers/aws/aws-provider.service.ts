@@ -2,10 +2,11 @@ import { getEnvString, resolveIotCredentials, resolveIotRegion } from '@lumimax/
 import { Inject, Injectable } from '@nestjs/common';
 import { AppLogger } from '@lumimax/logger';
 import type {
-  IotProvider,
-  PublishConnectionFeedbackInput,
-  PublishMessage,
-} from '../../interfaces/iot-provider.interface';
+  IotConnectionFeedbackMessage,
+  IotDownstreamMessage,
+  IotEgressAdapter,
+} from '../../interfaces/iot-egress-adapter.interface';
+import type { PublishMessage } from '../../interfaces/iot-provider.interface';
 
 const { IoTDataPlaneClient, PublishCommand } = require('@aws-sdk/client-iot-data-plane') as {
   IoTDataPlaneClient: new (input: Record<string, unknown>) => {
@@ -15,12 +16,12 @@ const { IoTDataPlaneClient, PublishCommand } = require('@aws-sdk/client-iot-data
 };
 
 @Injectable()
-export class AwsProviderService implements IotProvider {
+export class AwsProviderService implements IotEgressAdapter {
   readonly vendor = 'aws' as const;
 
   constructor(@Inject(AppLogger) private readonly logger: AppLogger) {}
 
-  async publish(input: PublishMessage): Promise<void> {
+  async publishDownstream(input: IotDownstreamMessage): Promise<void> {
     const endpoint = getEnvString('AWS_IOT_ENDPOINT', '')!;
     if (!endpoint) {
       this.logger.warn(
@@ -49,9 +50,13 @@ export class AwsProviderService implements IotProvider {
   }
 
   async publishConnectionFeedback(
-    input: PublishConnectionFeedbackInput,
+    input: IotConnectionFeedbackMessage,
   ): Promise<boolean> {
-    await this.publish(input);
+    await this.publishDownstream(input);
     return true;
+  }
+
+  async publish(input: PublishMessage): Promise<void> {
+    await this.publishDownstream(input);
   }
 }

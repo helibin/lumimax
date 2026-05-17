@@ -16,7 +16,7 @@ import {
   applyConfirmedSnapshot,
   applyFoodQuerySnapshots,
 } from '../food-query/food-query-snapshot.util';
-import type { StandardFoodCandidate } from '../food-query/food-query.types';
+import type { FoodQueryInputType, StandardFoodCandidate } from '../food-query/food-query.types';
 import { toFoodQueryMarket } from '../food-query/food-query.types';
 import type {
   FoodAnalysisConfirmationOption,
@@ -27,6 +27,10 @@ import type {
 import { resolveTenantId } from '../../common/tenant-scope.util';
 import { getDefaultLocale } from '../../config/default-locale';
 import { getDefaultDietMarket } from '../market/diet-market';
+import { SpeechRecognitionService } from '../../speech/speech-recognition.service';
+import { looksLikeAudioPayload } from '../../speech/speech-audio.util';
+import { BaseStorageGrpcAdapter } from '../../grpc/base-service.grpc-client';
+import { resolveMealItemAdminNutrition } from './meal-item-admin.util';
 
 @Injectable()
 export class DietApplicationService {
@@ -43,6 +47,10 @@ export class DietApplicationService {
     @Inject(FoodQueryService) private readonly foodQueryService: FoodQueryService,
     @Inject(FoodPersistenceService)
     private readonly foodPersistenceService: FoodPersistenceService,
+    @Inject(SpeechRecognitionService)
+    private readonly speechRecognitionService: SpeechRecognitionService,
+    @Inject(BaseStorageGrpcAdapter)
+    private readonly baseStorageGrpcAdapter: BaseStorageGrpcAdapter,
   ) {}
 
   async createMealRecord(input: {
@@ -81,7 +89,9 @@ export class DietApplicationService {
     mealRecordId: string;
     userId: string;
     deviceId: string;
-    imageKey: string;
+    type: 'image' | 'barcode' | 'text' | 'voice';
+    target: string;
+    imageKey?: string;
     imageUrl?: string;
     imageObjectId?: string;
     weightGram: number;
@@ -104,6 +114,16 @@ export class DietApplicationService {
     meal.market = dietContext.market;
     await this.mealRecordRepository.save(meal);
 
+    const voiceQueryText = await this.resolveVoiceOrTextQuery({
+      type: input.type,
+      target: input.target,
+      imageUrl: input.imageUrl,
+      imageKey: input.imageKey ?? input.imageObjectId,
+      locale: dietContext.locale ?? undefined,
+      market: dietContext.market ?? undefined,
+      requestId: input.requestId,
+    });
+
     const foodQueryResult = await this.foodQueryService.query({
       requestId: input.requestId,
       tenantId: meal.tenantId,
@@ -111,9 +131,10 @@ export class DietApplicationService {
       deviceId: input.deviceId,
       mealId: meal.id,
       market: toFoodQueryMarket(dietContext.market ?? undefined),
-      inputType: 'image',
-      query: undefined,
+      inputType: toFoodQueryInputType(input.type),
+      query: voiceQueryText,
       candidateNames: [],
+      barcode: input.type === 'barcode' ? input.target.trim() : undefined,
       imageUrl: input.imageUrl,
       imageKey: input.imageKey,
       weightGram: input.weightGram,
@@ -158,6 +179,8 @@ export class DietApplicationService {
         latencyMs: Date.now() - startedAt,
         requestPayloadJson: {
           mealRecordId: input.mealRecordId,
+          type: input.type,
+          target: input.target,
           imageKey: input.imageKey,
           imageObjectId: item.imageObjectId,
           weightGram: input.weightGram,
@@ -170,6 +193,7 @@ export class DietApplicationService {
           mealRecordId: meal.id,
           foodName: item.foodName,
           querySnapshot: foodQueryResult,
+          debugSnapshot: foodQueryResult.debug ?? null,
           recognitionSnapshot: foodQueryResult.recognition,
           resultSnapshot: selected,
           rawCandidates: foodQueryResult.candidates,
@@ -206,6 +230,8 @@ export class DietApplicationService {
       recognitionStatus: foodQueryResult.recognition?.status ?? 'fallback',
       confidence: foodQueryResult.recognition?.confidence,
       confirmationOptions,
+      imageType: foodQueryResult.recognition?.imageType,
+      selected,
     });
 
     return {
@@ -278,7 +304,7 @@ export class DietApplicationService {
       market: toFoodQueryMarket(dietContext.market ?? undefined),
       inputType: 'manual_text',
       query: input.foodName,
-      candidateNames: [input.foodName],
+      candidateNames: buildConfirmCandidateNames(item, input.foodName),
       weightGram,
       locale: dietContext.locale ?? undefined,
       countryCode,
@@ -349,6 +375,7 @@ export class DietApplicationService {
           itemId: savedItem.id,
           canonicalName: savedItem.foodName,
           nutritionCandidates: foodQueryResult.candidates,
+          debugSnapshot: foodQueryResult.debug ?? null,
         },
       }),
     );
@@ -466,7 +493,9 @@ export class DietApplicationService {
     service: 'meals';
     method: string;
     payload?: Record<string, unknown>;
+    requestId?: string;
   }): Promise<T> {
+    const requestId = pickString(input.requestId) ?? pickString(input.payload?.requestId);
     const page = Math.max(1, Number(input.payload?.page ?? 1));
     const pageSize = Math.max(1, Number(input.payload?.pageSize ?? 20));
 
@@ -490,12 +519,29 @@ export class DietApplicationService {
         const meal = await this.mustGetMeal(mealRecordId);
         const items = await this.mealItemRepository.find({
           where: { mealRecordId: meal.id },
-          order: { createdAt: 'ASC' },
+          order: { createdAt: 'DESC' },
         });
+        const recognitionLatencyByItemId = await this.loadRecognitionLatencyByItemId(meal.id);
         return {
           ...this.toMealAdminItem(meal),
-          items: items.map((item) => this.toMealItem(item)),
+          items: await Promise.all(
+            items.map((item) => this.toMealItemAdmin(item, requestId, recognitionLatencyByItemId)),
+          ),
         } as T;
+      }
+      case 'meals.GetMealItem': {
+        const itemId = String(input.payload?.itemId ?? input.payload?.id ?? '').trim();
+        if (!itemId) {
+          throw new Error('itemId is required');
+        }
+        const item = await this.mealItemRepository.findOne({
+          where: { id: itemId },
+        });
+        if (!item) {
+          throw new Error(`meal item not found: ${itemId}`);
+        }
+        const recognitionLatencyByItemId = await this.loadRecognitionLatencyByItemId(item.mealRecordId);
+        return (await this.toMealItemAdmin(item, requestId, recognitionLatencyByItemId)) as T;
       }
       case 'meals.ListMealItems': {
         const mealRecordId = String(input.payload?.id ?? input.payload?.mealRecordId ?? '').trim();
@@ -507,10 +553,13 @@ export class DietApplicationService {
             mealRecordId,
             ...buildMealItemFilters(input.payload),
           },
-          order: { createdAt: 'ASC' },
+          order: { createdAt: 'DESC' },
         });
+        const recognitionLatencyByItemId = await this.loadRecognitionLatencyByItemId(mealRecordId);
         return this.paginate<T>(
-          items.map((item) => this.toMealItem(item)),
+          await Promise.all(
+            items.map((item) => this.toMealItemAdmin(item, requestId, recognitionLatencyByItemId)),
+          ),
           1,
           Math.max(items.length, 1),
           items.length,
@@ -710,6 +759,123 @@ export class DietApplicationService {
     };
   }
 
+  private async loadRecognitionLatencyByItemId(
+    mealRecordId: string,
+  ): Promise<Map<string, number | null>> {
+    const logs = await this.recognitionLogRepository.find({
+      where: { mealId: mealRecordId },
+      order: { createdAt: 'ASC' },
+    });
+    const logsByItemId = new Map<string, RecognitionLogEntity[]>();
+    for (const log of logs) {
+      const itemId = pickRecognitionLogItemId(log);
+      if (!itemId) {
+        continue;
+      }
+      const bucket = logsByItemId.get(itemId) ?? [];
+      bucket.push(log);
+      logsByItemId.set(itemId, bucket);
+    }
+
+    const recognitionLatencyByItemId = new Map<string, number | null>();
+    for (const [itemId, itemLogs] of logsByItemId) {
+      const withLatency = itemLogs.find((log) => Number(log.latencyMs) > 0);
+      const picked = withLatency ?? itemLogs[0];
+      recognitionLatencyByItemId.set(
+        itemId,
+        picked && Number.isFinite(Number(picked.latencyMs)) ? Number(picked.latencyMs) : null,
+      );
+    }
+    return recognitionLatencyByItemId;
+  }
+
+  private async toMealItemAdmin(
+    item: MealItemEntity,
+    requestId?: string,
+    recognitionLatencyByItemId?: Map<string, number | null>,
+  ): Promise<Record<string, unknown>> {
+    const nutrition = resolveMealItemAdminNutrition(item);
+    const imagePreviewUrl = await this.resolveMealItemImagePreviewUrl(item.imageKey, requestId);
+    const recognitionLatencyMs = recognitionLatencyByItemId?.has(item.id)
+      ? recognitionLatencyByItemId.get(item.id) ?? null
+      : null;
+    return {
+      ...this.toMealItem(item),
+      weight: nutrition.weight,
+      calories: nutrition.calories,
+      protein: nutrition.protein,
+      fat: nutrition.fat,
+      carbs: nutrition.carbs,
+      recognitionLatencyMs,
+      imagePreviewUrl,
+      querySnapshot: item.querySnapshot ?? null,
+      recognitionSnapshot: item.recognitionSnapshot ?? null,
+      resultSnapshot: item.resultSnapshot ?? null,
+      rawCandidates: item.rawCandidates ?? null,
+      selectedCandidate: item.selectedCandidate ?? null,
+    };
+  }
+
+  private async resolveMealItemImagePreviewUrl(
+    imageKey?: string | null,
+    requestId?: string,
+  ): Promise<string | null> {
+    const objectKey = pickString(imageKey);
+    if (!objectKey) {
+      return null;
+    }
+    try {
+      const signed = await this.baseStorageGrpcAdapter.createSignedReadUrl<Record<string, unknown>>(
+        { objectKey },
+        requestId,
+      );
+      return pickString(signed.readUrl) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async resolveVoiceOrTextQuery(input: {
+    type: 'image' | 'barcode' | 'text' | 'voice';
+    target: string;
+    imageUrl?: string;
+    imageKey?: string;
+    locale?: string;
+    market?: string;
+    requestId: string;
+  }): Promise<string | undefined> {
+    if (input.type === 'text') {
+      return input.target.trim() || undefined;
+    }
+    if (input.type !== 'voice') {
+      return undefined;
+    }
+
+    const needsTranscription = looksLikeAudioPayload({
+      target: input.target,
+      audioUrl: input.imageUrl,
+      audioKey: input.imageKey,
+    });
+    if (!needsTranscription) {
+      return input.target.trim() || undefined;
+    }
+
+    if (!this.speechRecognitionService.isEnabled()) {
+      throw new Error(
+        '语音输入需要服务端转写，请配置 SPEECH_RECOGNITION_ENABLED 及对应 Provider 密钥',
+      );
+    }
+
+    const transcribed = await this.speechRecognitionService.transcribe({
+      requestId: input.requestId,
+      locale: input.locale,
+      market: input.market,
+      audioUrl: input.imageUrl,
+      audioKey: input.imageKey ?? input.target,
+    });
+    return transcribed.text.trim() || undefined;
+  }
+
 }
 
 function toDecimalString(value: number): string {
@@ -782,6 +948,87 @@ function resolveCountryCode(input: {
 
 function pickString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function pickRecognitionLogItemId(log: RecognitionLogEntity): string | undefined {
+  const response = log.responsePayloadJson;
+  const request = log.requestPayloadJson;
+  if (response && typeof response === 'object' && !Array.isArray(response)) {
+    const fromResponse = pickString((response as Record<string, unknown>).itemId);
+    if (fromResponse) {
+      return fromResponse;
+    }
+  }
+  if (request && typeof request === 'object' && !Array.isArray(request)) {
+    return pickString((request as Record<string, unknown>).itemId);
+  }
+  return undefined;
+}
+
+function buildConfirmCandidateNames(
+  item: Pick<MealItemEntity, 'querySnapshot' | 'selectedCandidate' | 'rawCandidates' | 'foodName'>,
+  selectedFoodName: string,
+): string[] {
+  const querySnapshot = isRecord(item.querySnapshot) ? item.querySnapshot : undefined;
+  const routingValue = querySnapshot?.routing;
+  const routing = isRecord(routingValue) ? routingValue : undefined;
+  const names = [
+    selectedFoodName,
+    item.foodName,
+    ...readStringArray(routing?.queryNames),
+    ...collectCandidateNames(item.selectedCandidate),
+    ...collectCandidateListNames(item.rawCandidates),
+  ];
+  return dedupeNonEmptyStrings(names).slice(0, 8);
+}
+
+function collectCandidateListNames(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((item) => collectCandidateNames(item));
+}
+
+function collectCandidateNames(value: unknown): string[] {
+  if (!isRecord(value)) {
+    return [];
+  }
+  const record = value as Record<string, unknown>;
+  return dedupeNonEmptyStrings([
+    pickString(record.name),
+    pickString(record.displayName),
+    pickString(record.canonicalName),
+    pickString(record.normalizedName),
+    pickString(record.brandName),
+  ]);
+}
+
+function readStringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.map((item) => pickString(item)).filter((item): item is string => Boolean(item))
+    : [];
+}
+
+function dedupeNonEmptyStrings(values: Array<string | undefined | null>): string[] {
+  const seen = new Set<string>();
+  const output: string[] = [];
+  for (const value of values) {
+    const trimmed = value?.trim();
+    if (!trimmed) {
+      continue;
+    }
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    output.push(trimmed);
+  }
+  return output;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function buildAnalysisItems(input: {
@@ -904,6 +1151,8 @@ function shouldRequireUserConfirmation(input: {
   recognitionStatus: 'success' | 'fallback';
   confidence?: number;
   confirmationOptions: FoodAnalysisConfirmationOption[];
+  imageType?: string;
+  selected?: StandardFoodCandidate;
 }): boolean {
   if (input.recognitionStatus !== 'success') {
     return true;
@@ -911,7 +1160,39 @@ function shouldRequireUserConfirmation(input: {
   if ((input.confidence ?? 0) < 0.75) {
     return true;
   }
+  if (
+    isPackagedFoodRecognition(input.imageType)
+    && (!input.selected || isIncompletePackagedFoodCandidate(input.selected))
+  ) {
+    return true;
+  }
   return input.confirmationOptions.length > 1;
+}
+
+function isPackagedFoodRecognition(imageType?: string): boolean {
+  return imageType === 'nutrition_label'
+    || imageType === 'packaged_food_front'
+    || imageType === 'barcode_or_qr';
+}
+
+function isIncompletePackagedFoodCandidate(candidate: StandardFoodCandidate): boolean {
+  if (candidate.type !== 'packaged_food') {
+    return true;
+  }
+  if (candidate.sourceCode === 'vision') {
+    return true;
+  }
+  if (candidate.verifiedLevel === 'unverified' || candidate.verifiedLevel === 'estimated') {
+    return true;
+  }
+  const nutrients = candidate.nutrientsPer100g;
+  if (!nutrients) {
+    return true;
+  }
+  return nutrients.caloriesKcal <= 0
+    && nutrients.proteinGram <= 0
+    && nutrients.fatGram <= 0
+    && nutrients.carbsGram <= 0;
 }
 
 function normalizeQuantity(value?: number): number | undefined {
@@ -1007,6 +1288,19 @@ function toNutritionCandidate(
     carbs: round(per100g.carbsGram * ratio),
     confidence: candidate.confidence,
   };
+}
+
+function toFoodQueryInputType(type: 'image' | 'barcode' | 'text' | 'voice'): FoodQueryInputType {
+  switch (type) {
+    case 'barcode':
+      return 'barcode';
+    case 'text':
+      return 'manual_text';
+    case 'voice':
+      return 'voice_text';
+    default:
+      return 'image';
+  }
 }
 
 function round(value: number): number {

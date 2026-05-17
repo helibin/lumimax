@@ -1,5 +1,6 @@
 import type { DietMarket } from '../market/diet-market';
 import type { FoodQueryMarket, ProviderRouteConfig } from './food-query.types';
+import type { ImageInputType } from '../interfaces/provider.contracts';
 
 export const DIET_ROUTE_MARKET_ORDER: DietMarket[] = ['CN', 'US'];
 
@@ -89,16 +90,27 @@ export function listRouteProviderNamesForMarket(market: DietMarket): string[] {
 export function resolveRouteKey(input: {
   inputType: string;
   foodType?: string;
+  imageType?: ImageInputType;
   hasBarcode?: boolean;
 }): string {
+  // 条码或营养成分表场景优先归到包装食品：
+  // 1. 这样日志里不会只看到 default，排查更直观；
+  // 2. 也能命中 packaged_food 专用 provider 顺序。
   if (input.hasBarcode || input.inputType === 'barcode') {
     return 'packaged_food';
   }
+  // 视觉或上游若已经给出明确 foodType，就尊重该类型继续路由。
   if (input.foodType && input.foodType !== 'unknown') {
     return input.foodType;
   }
-  if (input.inputType === 'ocr_nutrition_label') {
+  if (
+    input.imageType === 'nutrition_label'
+    || input.imageType === 'packaged_food_front'
+    || input.imageType === 'barcode_or_qr'
+    || input.inputType === 'ocr_nutrition_label'
+  ) {
     return 'packaged_food';
   }
+  // 兜底才走 default，适用于普通图片识别或缺少先验信息的情况。
   return 'default';
 }

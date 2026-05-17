@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { getEnvNumber } from '@lumimax/config';
 import { AppLogger } from '@lumimax/logger';
 import { ExternalServiceError, isExternalServiceError } from './provider-error';
 
@@ -12,48 +13,35 @@ export class DietProviderHttpClient {
     timeoutMs?: number;
     requestId?: string;
   }): Promise<{ contentType: string; base64: string }> {
-    const context = createRequestContext({
+    return this.executeWithRetry({
       method: 'GET',
       url: input.url,
-      timeoutMs: input.timeoutMs,
       headers: input.headers,
+      timeoutMs: input.timeoutMs,
       requestId: input.requestId,
-    });
+      execute: async (context) => {
+        const response = await this.fetchWithTimeout(context, undefined, '*/*');
+        if (!response.ok) {
+          throw await buildStatusError({
+            method: context.method,
+            url: input.url,
+            response,
+          });
+        }
 
-    try {
-      this.writeStartLog(context);
-      const response = await this.fetchWithTimeout(context, undefined, '*/*');
-      if (!response.ok) {
-        throw await buildStatusError({
-          method: context.method,
-          url: input.url,
-          response,
+        const buffer = Buffer.from(await response.arrayBuffer());
+        const result = {
+          contentType: response.headers.get('content-type')?.trim() || 'image/jpeg',
+          base64: buffer.toString('base64'),
+        };
+
+        this.writeSuccessLog(context, response, {
+          contentType: result.contentType,
+          bytes: buffer.length,
         });
-      }
-
-      const buffer = Buffer.from(await response.arrayBuffer());
-      const result = {
-        contentType: response.headers.get('content-type')?.trim() || 'image/jpeg',
-        base64: buffer.toString('base64'),
-      };
-
-      this.writeSuccessLog(context, response, {
-        contentType: result.contentType,
-        bytes: buffer.length,
-      });
-      return result;
-    } catch (error) {
-      const wrapped = wrapHttpClientError({
-        method: context.method,
-        url: input.url,
-        timeoutMs: context.timeoutMs,
-        error,
-      });
-      this.writeFailureLog(context, wrapped);
-      throw wrapped;
-    } finally {
-      context.dispose();
-    }
+        return result;
+      },
+    });
   }
 
   async getJson<T>(input: {
@@ -61,6 +49,8 @@ export class DietProviderHttpClient {
     headers?: Record<string, string>;
     timeoutMs?: number;
     requestId?: string;
+    /** 404 时返回 null 并记 debug，不记 error（用于可换候选的详情拉取） */
+    notFoundAsNull?: boolean;
   }): Promise<T> {
     return this.requestJson<T>({
       method: 'GET',
@@ -68,6 +58,19 @@ export class DietProviderHttpClient {
       headers: input.headers,
       timeoutMs: input.timeoutMs,
       requestId: input.requestId,
+      notFoundAsNull: input.notFoundAsNull,
+    });
+  }
+
+  async tryGetJson<T>(input: {
+    url: string;
+    headers?: Record<string, string>;
+    timeoutMs?: number;
+    requestId?: string;
+  }): Promise<T | null> {
+    return this.getJson<T | null>({
+      ...input,
+      notFoundAsNull: true,
     });
   }
 
@@ -95,48 +98,99 @@ export class DietProviderHttpClient {
     body?: unknown;
     timeoutMs?: number;
     requestId?: string;
+    notFoundAsNull?: boolean;
   }): Promise<T> {
-    const context = createRequestContext({
+    return this.executeWithRetry<T>({
       method: input.method,
       url: input.url,
-      timeoutMs: input.timeoutMs,
       headers: input.headers,
       body: input.body,
+      timeoutMs: input.timeoutMs,
       requestId: input.requestId,
-    });
+      notFoundAsNull: input.notFoundAsNull,
+      execute: async (context) => {
+        const response = await this.fetchWithTimeout(
+          context,
+          input.body !== undefined ? JSON.stringify(input.body) : undefined,
+          'application/json',
+        );
+        const text = await response.text();
+        if (!response.ok) {
+          if (input.notFoundAsNull && response.status === 404) {
+            const notFoundError = buildStatusErrorFromText({
+              method: context.method,
+              url: input.url,
+              status: response.status,
+              text,
+            });
+            this.writeFailureLog(context, notFoundError, 'debug');
+            return null as T;
+          }
+          throw buildStatusErrorFromText({
+            method: context.method,
+            url: input.url,
+            status: response.status,
+            text,
+          });
+        }
 
-    try {
-      this.writeStartLog(context);
-      const response = await this.fetchWithTimeout(
-        context,
-        input.body !== undefined ? JSON.stringify(input.body) : undefined,
-        'application/json',
-      );
-      const text = await response.text();
-      if (!response.ok) {
-        throw buildStatusErrorFromText({
+        const payload = text.trim() ? (JSON.parse(text) as T) : ({} as T);
+        this.writeSuccessLog(context, response, payload, text);
+        return payload;
+      },
+    });
+  }
+
+  private async executeWithRetry<T>(input: {
+    method: 'GET' | 'POST';
+    url: string;
+    headers?: Record<string, string>;
+    body?: unknown;
+    timeoutMs?: number;
+    requestId?: string;
+    notFoundAsNull?: boolean;
+    execute: (context: ThirdPartyRequestContext) => Promise<T>;
+  }): Promise<T> {
+    const maxAttempts = getThirdPartyHttpMaxAttempts();
+    let lastError: Error | undefined;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      const context = createRequestContext({
+        method: input.method,
+        url: input.url,
+        timeoutMs: input.timeoutMs,
+        headers: input.headers,
+        body: input.body,
+        requestId: input.requestId,
+        attempt,
+        maxAttempts,
+      });
+
+      try {
+        this.writeStartLog(context);
+        return await input.execute(context);
+      } catch (error) {
+        const wrapped = wrapHttpClientError({
           method: context.method,
           url: input.url,
-          status: response.status,
-          text,
+          timeoutMs: context.timeoutMs,
+          error,
         });
+        lastError = wrapped;
+        if (attempt < maxAttempts && shouldRetryError(wrapped)) {
+          const retryDelayMs = getThirdPartyHttpRetryDelayMs(attempt);
+          this.writeRetryLog(context, wrapped, retryDelayMs);
+          await sleep(retryDelayMs);
+          continue;
+        }
+        this.writeFailureLog(context, wrapped);
+        throw wrapped;
+      } finally {
+        context.dispose();
       }
-
-      const payload = text.trim() ? (JSON.parse(text) as T) : ({} as T);
-      this.writeSuccessLog(context, response, summarizeStructuredPayload(payload), text);
-      return payload;
-    } catch (error) {
-      const wrapped = wrapHttpClientError({
-        method: context.method,
-        url: input.url,
-        timeoutMs: context.timeoutMs,
-        error,
-      });
-      this.writeFailureLog(context, wrapped);
-      throw wrapped;
-    } finally {
-      context.dispose();
     }
+
+    throw lastError ?? new Error(`第三方调用失败: ${input.method} ${sanitizeUrl(input.url)}`);
   }
 
   private async fetchWithTimeout(
@@ -160,6 +214,8 @@ export class DietProviderHttpClient {
     safeLog(this.logger, 'debug', `发起第三方调用 ${context.method} ${context.sanitizedUrl}`, {
       requestId: context.requestId,
       idLabel: 'ReqId',
+      attempt: context.attempt,
+      maxAttempts: context.maxAttempts,
       timeoutMs: context.timeoutMs,
       startedAt: new Date(context.startedAt).toISOString(),
       request: context.requestSummary,
@@ -172,29 +228,59 @@ export class DietProviderHttpClient {
     result: unknown,
     rawText?: string,
   ): void {
+    const finishedAt = new Date().toISOString();
+    const durationMs = Date.now() - context.startedAt;
     safeLog(this.logger, 'debug', `<<< 第三方调用完成 ${context.method} ${response.status}`, {
       requestId: context.requestId,
       idLabel: 'ReqId',
-      statusCode: response.status,
-      ok: response.ok,
-      durationMs: Date.now() - context.startedAt,
-      finishedAt: new Date().toISOString(),
-      response: {
+      responseEvent: {
+        attempt: context.attempt,
+        maxAttempts: context.maxAttempts,
+        statusCode: response.status,
+        ok: response.ok,
+        durationMs,
+        finishedAt,
         headers: summarizeResponseHeaders(response.headers),
-        ...(rawText !== undefined ? { preview: summarizeResponsePreview(rawText) } : {}),
       },
-      result,
+      result: summarizeSuccessResult(result, rawText),
+    }, DietProviderHttpClient.name);
+  }
+
+  private writeRetryLog(
+    context: ThirdPartyRequestContext,
+    error: Error,
+    retryDelayMs: number,
+  ): void {
+    const external = isExternalServiceError(error) ? error : undefined;
+    safeLog(this.logger, 'debug', `第三方调用准备重试 ${context.method} ${context.sanitizedUrl}`, {
+      requestId: context.requestId,
+      idLabel: 'ReqId',
+      attempt: context.attempt,
+      maxAttempts: context.maxAttempts,
+      retryDelayMs,
+      timeoutMs: context.timeoutMs,
+      durationMs: Date.now() - context.startedAt,
+      result: {
+        kind: external?.kind ?? 'unknown',
+        statusCode: external?.statusCode ?? null,
+        retryable: external?.retryable ?? false,
+        userMessage: external?.userMessage ?? error.message,
+      },
+      errorMessage: error.message,
     }, DietProviderHttpClient.name);
   }
 
   private writeFailureLog(
     context: ThirdPartyRequestContext,
     error: Error,
+    level: 'debug' | 'error' = 'error',
   ): void {
     const external = isExternalServiceError(error) ? error : undefined;
-    safeLog(this.logger, 'error', `第三方调用失败 ${context.method} ${context.sanitizedUrl}`, {
+    safeLog(this.logger, level, buildFailureLogMessage(context, external), {
       requestId: context.requestId,
       idLabel: 'ReqId',
+      attempt: context.attempt,
+      maxAttempts: context.maxAttempts,
       timeoutMs: context.timeoutMs,
       startedAt: new Date(context.startedAt).toISOString(),
       finishedAt: new Date().toISOString(),
@@ -214,6 +300,19 @@ export class DietProviderHttpClient {
 
 type ThirdPartyRequestContext = ReturnType<typeof createRequestContext>;
 
+function buildFailureLogMessage(
+  context: ThirdPartyRequestContext,
+  external?: ExternalServiceError,
+): string {
+  const parts = [
+    `第三方调用失败 ${context.method} ${context.sanitizedUrl}`,
+    external?.kind ? `kind=${external.kind}` : undefined,
+    typeof external?.statusCode === 'number' ? `status=${external.statusCode}` : undefined,
+    typeof external?.retryable === 'boolean' ? `retryable=${external.retryable}` : undefined,
+  ].filter((item): item is string => Boolean(item));
+  return parts.join(' ');
+}
+
 function createRequestContext(input: {
   method: 'GET' | 'POST';
   url: string;
@@ -221,6 +320,8 @@ function createRequestContext(input: {
   headers?: Record<string, string>;
   body?: unknown;
   requestId?: string;
+  attempt: number;
+  maxAttempts: number;
 }) {
   const controller = new AbortController();
   const timeoutMs = input.timeoutMs ?? 8000;
@@ -233,6 +334,8 @@ function createRequestContext(input: {
     timeoutMs,
     startedAt,
     requestId: input.requestId,
+    attempt: input.attempt,
+    maxAttempts: input.maxAttempts,
     controller,
     headers: input.headers,
     requestSummary: buildRequestSummary({
@@ -488,6 +591,26 @@ function resolveTransportUserMessage(kind: ExternalServiceError['kind']): string
   }
 }
 
+function shouldRetryError(error: Error): boolean {
+  return isExternalServiceError(error) && error.retryable;
+}
+
+function getThirdPartyHttpMaxAttempts(): number {
+  return Math.max(1, getEnvNumber('THIRD_PARTY_HTTP_MAX_ATTEMPTS', 2));
+}
+
+function getThirdPartyHttpRetryDelayMs(attempt: number): number {
+  const baseDelayMs = Math.max(0, getEnvNumber('THIRD_PARTY_HTTP_RETRY_DELAY_MS', 300));
+  return baseDelayMs * Math.max(1, attempt);
+}
+
+async function sleep(delayMs: number): Promise<void> {
+  if (delayMs <= 0) {
+    return;
+  }
+  await new Promise((resolve) => setTimeout(resolve, delayMs));
+}
+
 function normalizeExternalMessage(text: string): string {
   const compact = String(text ?? '').trim();
   if (!compact) {
@@ -568,10 +691,136 @@ function summarizeResponsePreview(text: string): unknown {
     return undefined;
   }
   try {
-    return summarizeStructuredPayload(JSON.parse(normalized));
+    return summarizeSuccessResult(JSON.parse(normalized));
   } catch {
     return truncateString(normalized, 180);
   }
+}
+
+function summarizeSuccessResult(payload: unknown, rawText?: string): unknown {
+  const fromPayload = summarizeLlmResult(payload);
+  if (fromPayload !== undefined) {
+    return fromPayload;
+  }
+
+  if (rawText !== undefined) {
+    const normalized = normalizeExternalMessage(rawText);
+    if (normalized) {
+      try {
+        const parsed = JSON.parse(normalized);
+        const fromText = summarizeLlmResult(parsed);
+        if (fromText !== undefined) {
+          return fromText;
+        }
+      } catch {
+        // ignore non-JSON raw text here; generic fallback below is enough
+      }
+    }
+  }
+
+  return summarizeResultValue(payload);
+}
+
+function summarizeLlmResult(payload: unknown): unknown {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return undefined;
+  }
+
+  const record = payload as Record<string, unknown>;
+  if (!Array.isArray(record.choices)) {
+    return undefined;
+  }
+
+  const firstChoice = record.choices[0];
+  if (!firstChoice || typeof firstChoice !== 'object' || Array.isArray(firstChoice)) {
+    return {
+      choices: record.choices.length,
+    };
+  }
+
+  const choice = firstChoice as Record<string, unknown>;
+  const summary: Record<string, unknown> = {
+    choices: record.choices.length,
+  };
+
+  if (typeof choice.finish_reason === 'string') {
+    summary.finishReason = choice.finish_reason;
+  }
+
+  const message = choice.message;
+  if (message && typeof message === 'object' && !Array.isArray(message)) {
+    const content = (message as Record<string, unknown>).content;
+    const output = summarizeLlmContent(content);
+    if (output !== undefined) {
+      summary.output = output;
+    }
+  }
+
+  return summary;
+}
+
+function summarizeLlmContent(content: unknown): unknown {
+  if (typeof content === 'string') {
+    const normalized = normalizeExternalMessage(content);
+    if (!normalized) {
+      return '';
+    }
+    try {
+      return summarizeResultValue(JSON.parse(normalized));
+    } catch {
+      return truncateString(normalized, 240);
+    }
+  }
+
+  if (Array.isArray(content)) {
+    const textParts = content
+      .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object' && !Array.isArray(item))
+      .map((item) => ('text' in item && typeof item.text === 'string' ? item.text : ''))
+      .filter((item) => item.length > 0);
+    if (textParts.length > 0) {
+      return textParts.map((item) => summarizeLlmContent(item));
+    }
+    return summarizeResultValue(content);
+  }
+
+  return summarizeResultValue(content);
+}
+
+function summarizeResultValue(value: unknown, depth = 0): unknown {
+  if (typeof value === 'string') {
+    return truncateString(value, 240);
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean' || value === null || value === undefined) {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    if (depth >= 3) {
+      return {
+        type: 'array',
+        length: value.length,
+      };
+    }
+    return value.slice(0, 3).map((item) => summarizeResultValue(item, depth + 1));
+  }
+
+  if (typeof value !== 'object') {
+    return String(value);
+  }
+
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (depth >= 3) {
+    return {
+      type: 'object',
+      keys: entries.map(([key]) => key).slice(0, 8),
+      size: entries.length,
+    };
+  }
+
+  return Object.fromEntries(
+    entries.slice(0, 8).map(([key, item]) => [key, summarizeResultValue(item, depth + 1)]),
+  );
 }
 
 function summarizeStructuredPayload(payload: unknown): unknown {

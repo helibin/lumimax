@@ -324,10 +324,12 @@ test('nutrition analysis result only exposes mealRecordId', async () => {
 });
 
 test('food analysis result uses weight and unit fields', async () => {
+  let capturedInput: Record<string, unknown> | undefined;
   const service = new IotDispatcherService(
     {} as never,
     {
-      async analyzeFoodItem() {
+      async analyzeFoodItem(input: Record<string, unknown>) {
+        capturedInput = input;
         return {
           itemId: '01h0000000000000000000501',
           items: [{
@@ -386,7 +388,8 @@ test('food analysis result uses weight and unit fields', async () => {
     locale: 'zh-CN',
     payload: {
       mealRecordId: '01h0000000000000000000401',
-      imageKey: 'tmp-file/device/device-001/demo.png',
+      type: 'image',
+      target: 'tmp-file/device/device-001/demo.png',
       weight: 123.5,
     },
     timestamp: Date.now(),
@@ -394,44 +397,40 @@ test('food analysis result uses weight and unit fields', async () => {
   });
 
   assert.equal(result.downlink?.event, 'food.analysis.result');
-  assert.equal(result.downlink?.data?.weight, 123.5);
-  assert.equal(result.downlink?.data?.unit, 'g');
-  assert.equal('weightValue' in (result.downlink?.data ?? {}), false);
-  assert.equal('weightUnit' in (result.downlink?.data ?? {}), false);
-  assert.deepEqual(result.downlink?.data?.items, [
-    {
-      foodId: '01h0000000000000000000501',
-      type: 'ingredient',
-      name: 'rice',
-      displayName: '米饭',
-      canonicalName: 'steamed white rice',
-      quantity: 1,
-      measuredWeightGram: 123.5,
-      estimatedWeightGram: 123.5,
-      confidence: 0.92,
-      source: 'usda_fdc',
-      provider: 'usda_fdc',
-      verifiedLevel: 'verified',
-      calories: 120,
-      nutrition: {
-        protein: 2.7,
-        fat: 0.3,
-        carbohydrate: 25.6,
-        fiber: 0,
-      },
-      children: [],
-    },
-  ]);
-  assert.deepEqual(result.downlink?.data?.estimatedNutrition, {
-    calories: 120,
-    protein: 2.7,
-    fat: 0.3,
-    carbs: 25.6,
+  assert.deepEqual(capturedInput, {
+    mealRecordId: '01h0000000000000000000401',
+    userId: 'device-001',
+    deviceId: 'device-001',
+    type: 'image',
+    target: 'tmp-file/device/device-001/demo.png',
+    weightGram: 123.5,
+    locale: 'zh-CN',
+    market: undefined,
+    requestId: '01h0000000000000000000500',
+  });
+  assert.deepEqual(result.downlink?.data?.food, {
+    id: '01h0000000000000000000501',
+    type: 'ingredient',
+    name: 'rice',
+    displayName: '米饭',
+    canonicalName: 'steamed white rice',
+    quantity: 1,
+    weightGram: 123.5,
+    estimatedWeightGram: 123.5,
+    confidence: 0.92,
     source: 'usda_fdc',
     provider: 'usda_fdc',
     verifiedLevel: 'verified',
+    nutrition: {
+      calories: 120,
+      protein: 2.7,
+      fat: 0.3,
+      carbs: 25.6,
+      fiber: 0,
+    },
+    children: [],
   });
-  assert.deepEqual(result.downlink?.data?.confirmationOptions, [{
+  assert.deepEqual(result.downlink?.data?.candidates, [{
     optionId: 'recognized:steamed white rice',
     foodName: 'rice',
     displayName: '米饭',
@@ -441,17 +440,27 @@ test('food analysis result uses weight and unit fields', async () => {
     confidence: 0.92,
   }]);
   assert.equal(result.downlink?.data?.requiresUserConfirmation, false);
-  assert.deepEqual(result.downlink?.data?.userCommonCandidates, []);
-  assert.equal('recognitions' in (result.downlink?.data ?? {}), false);
+  const responseData = result.downlink?.data ?? {};
+  assert.equal('weight' in responseData, false);
+  assert.equal('unit' in responseData, false);
+  assert.equal('items' in responseData, false);
+  assert.equal('estimatedNutrition' in responseData, false);
+  assert.equal('confirmationOptions' in responseData, false);
+  assert.equal('userCommonCandidates' in responseData, false);
+  assert.equal('recognitions' in responseData, false);
 });
 
 test('food analysis falls back to protocol lang when payload locale is absent', async () => {
   let capturedLocale: string | undefined;
+  let capturedType: string | undefined;
+  let capturedTarget: string | undefined;
   const service = new IotDispatcherService(
     {} as never,
     {
-      async analyzeFoodItem(input: { locale?: string }) {
+      async analyzeFoodItem(input: { locale?: string; type?: string; target?: string }) {
         capturedLocale = input.locale;
+        capturedType = input.type;
+        capturedTarget = input.target;
         return {
           itemId: '01h0000000000000000000502',
           items: [{
@@ -502,7 +511,8 @@ test('food analysis falls back to protocol lang when payload locale is absent', 
     locale: 'en-US',
     payload: {
       mealRecordId: '01h0000000000000000000402',
-      imageKey: 'tmp-file/device/device-002/demo.png',
+      type: 'barcode',
+      target: '6923450657713',
       weight: 88,
     },
     timestamp: Date.now(),
@@ -510,9 +520,11 @@ test('food analysis falls back to protocol lang when payload locale is absent', 
   });
 
   assert.equal(capturedLocale, 'en-US');
+  assert.equal(capturedType, 'barcode');
+  assert.equal(capturedTarget, '6923450657713');
 });
 
-test('food analysis result ignores legacy single-food payload fallback', async () => {
+test('food analysis result omits food when analysis items are absent', async () => {
   const service = new IotDispatcherService(
     {} as never,
     {
@@ -551,14 +563,15 @@ test('food analysis result ignores legacy single-food payload fallback', async (
     locale: 'zh-CN',
     payload: {
       mealRecordId: '01h0000000000000000000602',
-      imageKey: 'tmp-file/device/device-legacy/demo.png',
+      target: 'tmp-file/device/device-legacy/demo.png',
       weight: 80,
     },
     timestamp: Date.now(),
     receivedAt: new Date('2026-05-01T00:00:00.000Z'),
   });
 
-  assert.deepEqual(result.downlink?.data?.items, []);
+  assert.deepEqual(result.downlink?.data?.candidates, []);
+  assert.equal(result.downlink?.data?.requiresUserConfirmation, true);
   assert.equal('food' in (result.downlink?.data ?? {}), false);
 });
 

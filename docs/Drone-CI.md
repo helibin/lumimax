@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | `ci-api` | `push` / `pull_request`，分支 `main`、`master`、`develop` | `api`：install → `arch:check` → `lint` → `build`；成功/失败 **飞书 webhook**（`FEISHU_WEBHOOK`） |
 | `ci-web` | 同上 | `web`：install → `build:admin` + `build:www`；成功/失败飞书通知 |
-| `docker-lumimax` | `push` / `tag`，且 ref 为上述分支或 `refs/tags/v*` | `plugins/docker` 构建 `docker/Dockerfile` 并推送；成功/失败飞书通知 |
+| `docker-lumimax` | `push` / `tag`，且 ref 为 `main` 或 `refs/tags/*` | `plugins/docker` 构建 `docker/Dockerfile` 并推送；可选 SSH 部署；成功/失败飞书通知 |
 
 `docker-lumimax` 的 **ref 不包含** `refs/pull/*`，因此 **不会在 PR 上打镜像**（与根目录 `.github/workflows/docker.yml` 的语义接近）。
 
@@ -84,7 +84,7 @@ sudo systemctl restart docker
 
 ---
 
-## 4. 镜像推送所需 Secrets（`docker-lumimax`）
+## 4. 镜像推送与部署所需 Secrets（`docker-lumimax`）
 
 在 **Drone → 该仓库 → Settings → Secrets** 中新增（名称需与 `.drone.yml` 一致）：
 
@@ -98,6 +98,33 @@ sudo systemctl restart docker
 **Harbor / 自建 registry**：`docker_registry` 填域名，`docker_repo` 填 `项目名/镜像名`。
 
 未配置上述 secret 时，`docker-lumimax` 会在 `publish` 步骤失败；**CI 两条 pipeline 不依赖这些 secret**。
+
+### 可选：SSH 部署 Secrets
+
+根 `.drone.yml` 的 `deploy` 步骤会在 `publish` 后运行，仅用于开发环境：
+
+- `push` 到 `main` 时，使用 `latest` 镜像尝试部署到开发环境
+
+对应 Secrets：
+
+| Secret | 说明 |
+| --- | --- |
+| `DEV_HOST` / `DEV_SSH_USER` / `DEV_SSH_KEY` | 开发环境 SSH 信息 |
+| `DEV_DEPLOY_PATH` | 开发环境部署目录，默认 `/data/docker/lumimax` |
+
+远端部署目录需已包含：
+
+- `compose.stack.yml`
+- `compose.infra.yml`
+- `.env`
+- `docker/emqx/` 相关配置文件
+
+部署步骤会在远端生成 `.image.env`，写入 `LUMIMAX_IMAGE=hub.vlb.cn/work/lumimax:latest`，再执行：
+
+```bash
+docker compose -f compose.stack.yml --env-file .env --env-file .image.env pull lumimax
+docker compose -f compose.stack.yml --env-file .env --env-file .image.env up -d
+```
 
 ---
 

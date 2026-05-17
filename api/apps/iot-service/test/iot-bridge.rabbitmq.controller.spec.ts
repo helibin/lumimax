@@ -36,34 +36,20 @@ test('bridge controller acks uplink on success', async () => {
   const { context, calls } = createContext();
   const controller = new IotBridgeRabbitmqController(
     {
-      normalize(input: Record<string, unknown>) {
-        assert.equal(input.topic, 'v1/event/device-001/req');
-        return {
-          vendor: 'emqx',
-          topic: 'v1/event/device-001/req',
-          deviceId: 'device-001',
-          topicKind: 'event.req',
-          requestId: 'uplink-1',
-          event: 'demo',
-          locale: 'en-US',
-          payload: { ok: true },
-          timestamp: Date.now(),
-          receivedAt: new Date(),
-        };
-      },
-    } as never,
-    {
-      async recordReceived() {
-        return { duplicate: false, entity: { status: 'received' } };
-      },
-      async markQueued() {},
-    } as never,
-    {
-      async emitEvent(_eventName: string, payload: Record<string, unknown>) {
+      async bridgeUplink(payload: Record<string, unknown>, input: Record<string, unknown>) {
         assert.equal(payload.requestId, 'uplink-1');
+        assert.equal(payload.topic, 'v1/event/device-001/req');
+        assert.equal(input.eventName, 'iot.up.event');
+        assert.equal(input.transport, 'rmq');
+        assert.deepEqual((input.meta as { fields?: Record<string, unknown> } | undefined)?.fields, { routingKey: 'test' });
       },
     } as never,
-    { debug() {}, warn() {}, info() {}, error() {} } as never,
+    {
+      debug() {},
+      warn() {},
+      info() {},
+      error() {},
+    } as never,
   );
 
   await controller.handleEvent(
@@ -85,18 +71,7 @@ test('bridge controller nacks uplink on failure', async () => {
   const { context, calls } = createContext();
   const controller = new IotBridgeRabbitmqController(
     {
-      normalize() {
-        throw new Error('ingest failed');
-      },
-    } as never,
-    {
-      async recordReceived() {
-        return { duplicate: false, entity: { status: 'received' } };
-      },
-      async markQueued() {},
-    } as never,
-    {
-      async emitEvent() {
+      async bridgeUplink() {
         throw new Error('ingest failed');
       },
     } as never,
@@ -123,41 +98,11 @@ test('bridge controller nacks uplink on failure', async () => {
 
 test('bridge controller skips duplicate uplink that is still received', async () => {
   const { context, calls } = createContext();
-  let emitted = false;
+  let bridged = false;
   const controller = new IotBridgeRabbitmqController(
     {
-      normalize() {
-        return {
-          vendor: 'emqx',
-          topic: 'v1/connect/device-001/req',
-          deviceId: 'device-001',
-          topicKind: 'connect.req',
-          requestId: 'uplink-duplicate',
-          event: 'connect.register',
-          locale: 'en-US',
-          payload: { ok: true },
-          timestamp: Date.now(),
-          receivedAt: new Date(),
-        };
-      },
-    } as never,
-    {
-      async recordReceived() {
-        return {
-          duplicate: true,
-          entity: {
-            messageKey: 'uplink-duplicate',
-            status: 'received',
-          },
-        };
-      },
-      async markQueued() {
-        throw new Error('markQueued should not be called for duplicate received uplink');
-      },
-    } as never,
-    {
-      async emitEvent() {
-        emitted = true;
+      async bridgeUplink() {
+        bridged = true;
       },
     } as never,
     { debug() {}, warn() {}, info() {}, error() {} } as never,
@@ -174,7 +119,7 @@ test('bridge controller skips duplicate uplink that is still received', async ()
     context as never,
   );
 
-  assert.equal(emitted, false);
+  assert.equal(bridged, true);
   assert.equal(calls.ack, 1);
   assert.equal(calls.nack, 0);
 });

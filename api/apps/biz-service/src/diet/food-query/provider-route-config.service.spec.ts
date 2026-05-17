@@ -33,4 +33,16 @@ test('resolveRouteKey prefers food type and barcode', () => {
     resolveRouteKey({ inputType: 'barcode', hasBarcode: true }),
     'packaged_food',
   );
+  assert.equal(
+    resolveRouteKey({ inputType: 'image', imageType: 'nutrition_label' }),
+    'packaged_food',
+  );
+  assert.equal(
+    resolveRouteKey({ inputType: 'image', imageType: 'packaged_food_front' }),
+    'packaged_food',
+  );
+  assert.equal(
+    resolveRouteKey({ inputType: 'image', imageType: 'barcode_or_qr' }),
+    'packaged_food',
+  );
 });

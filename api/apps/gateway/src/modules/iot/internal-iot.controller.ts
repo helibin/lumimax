@@ -26,6 +26,7 @@ export class InternalIotController {
     @Body() body: Record<string, unknown>,
     @Req() req: any,
   ) {
+    console.log(1111, '1,,,')
     this.internalMqttAuthService.authorize(headers);
     return this.grpcInvoker.invoke({
       service: 'biz-service',

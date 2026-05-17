@@ -9,7 +9,7 @@ export const RABBITMQ_SHARED_VHOST = '/';
 
 /** Log / doc labels only (single broker profile in topology). */
 export const RABBITMQ_APP_PROFILE_NAME = 'lumimax.default';
-export const RABBITMQ_IOT_PROFILE_NAME = 'lumimax.iot';
+export const RABBITMQ_IOT_PROFILE_NAME = 'lumimax.bus';
 
 export const RABBITMQ_DEFAULT_URL = 'amqp://guest:guest@localhost:5672';
 /** Single topic exchange name for app + IoT on the default RabbitMQ vhost: `lumimax.bus`. */

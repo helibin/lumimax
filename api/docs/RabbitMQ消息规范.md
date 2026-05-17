@@ -9,7 +9,7 @@
 
 - 业务事件统一走 RabbitMQ，不让 biz-service 直接耦合 MQTT 报文。
 - exchange 与 routing key 语义稳定，payload 可演进（向后兼容）。
-- 单一 topic exchange `lumimax.bus`；**当前**主消费队列：`lumimax.q.iot.stream`（**iot-service**，`iot.up.#` / `iot.down.#`）与 `lumimax.q.biz.events`（**biz-service**，`biz.iot.message.received`），统一死信队列为 `lumimax.q.dead`。详见 [`docs/IoT通讯模块规范.md`](../../docs/IoT通讯模块规范.md) §4。
+- 单一 topic exchange `lumimax.bus`；**当前**主消费队列：`lumimax.q.iot.stream`（**iot-service**，`iot.down.#`）与 `lumimax.q.biz.events`（**biz-service**，`biz.iot.message.received`），统一死信队列为 `lumimax.q.dead`。详见 [`docs/IoT通讯模块规范.md`](../../docs/IoT通讯模块规范.md) §4。
 
 ---
 
@@ -24,10 +24,10 @@
 其中：
 
 ```text
-lumimax.bus                     # 默认 vhost 内：业务事件 + IoT bridge 共用 topic exchange
+lumimax.bus                     # 默认 vhost 内：IoT bridge + biz 事件共用 topic exchange
 ```
 
-业务与 IoT 通过 **不同队列** 与 **路由键** 隔离（IoT 使用 `iot.up.*` / `iot.down.*`；业务事件使用 `biz.*`，由拓扑绑定到 `lumimax.q.biz.events`）。
+业务与 IoT 通过 **不同队列** 与 **路由键** 隔离（IoT 使用 `iot.down.*`；业务事件使用 `biz.*`，由拓扑绑定到 `lumimax.q.biz.events`）。EMQX 开源版主链路的**上行入口不经 RabbitMQ**，而是由 `iot-service` MQTT 共享订阅后再发布到本 exchange。
 
 其它（可选、未在默认拓扑中创建）：
 
@@ -72,7 +72,7 @@ diet.food.user_common.updated.v1
 
 ```text
 lumimax.q.biz.events        # biz-service（biz.iot.message.received 等 biz.#）
-lumimax.q.iot.stream        # iot-service（iot.up.# / iot.down.#）
+lumimax.q.iot.stream        # iot-service（iot.down.#）
 lumimax.q.dead              # 统一死信队列
 diet.meal.create.queue
 diet.food.analyze.queue
@@ -130,6 +130,7 @@ diet.food.analyze.retry.queue
 - 消费失败重试：最多 3 次，指数退避（1s/5s/30s）。
 - 超过重试进入对应 DLQ。
 - DLQ 必须带最后错误原因与 stack 摘要（避免吞错）。
+- `iot-service` 写入 RabbitMQ 时必须开启 publisher confirm。
 
 ---
 
@@ -137,7 +138,7 @@ diet.food.analyze.retry.queue
 
 - 南向：EMQ X / MQTT / `meta.event` 报文。
 - 北向：RabbitMQ envelope（本文件）。
-- IoT bridge 负责协议翻译、字段校验与路由键映射。
+- IoT bridge 负责协议翻译、字段校验、幂等去重与路由键映射。
 
 ---
 

@@ -10,6 +10,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  Max,
   Min,
   validateSync,
 } from 'class-validator';
@@ -102,6 +103,16 @@ class BizServiceEnvSchema {
   @IsString()
   LLM_VISION_TIMEOUT_MS = '15000';
 
+  @Transform(({ value }) => Number(value ?? 2))
+  @IsInt()
+  @Min(1)
+  THIRD_PARTY_HTTP_MAX_ATTEMPTS = 2;
+
+  @Transform(({ value }) => Number(value ?? 300))
+  @IsInt()
+  @Min(0)
+  THIRD_PARTY_HTTP_RETRY_DELAY_MS = 300;
+
   @IsOptional()
   @IsString()
   NUTRITIONIX_APP_ID = '';
@@ -160,6 +171,31 @@ class BizServiceEnvSchema {
 
   @IsOptional()
   @IsString()
+  BOOHEE_BASE_URL = '';
+
+  @IsOptional()
+  @IsString()
+  BOOHEE_APP_ID = '';
+
+  @IsOptional()
+  @IsString()
+  BOOHEE_APP_KEY = '';
+
+  @IsOptional()
+  @IsString()
+  BOOHEE_SEARCH_PATH = '/api/v1/foods/search';
+
+  @IsOptional()
+  @IsString()
+  BOOHEE_DETAIL_PATH = '/api/v1/foods/{id}';
+
+  @Transform(({ value }) => Number(value ?? 8000))
+  @IsInt()
+  @Min(1000)
+  BOOHEE_TIMEOUT_MS = 8000;
+
+  @IsOptional()
+  @IsString()
   @IsIn(['true', 'false'])
   USDA_ENABLED = 'true';
 
@@ -167,6 +203,11 @@ class BizServiceEnvSchema {
   @IsInt()
   @Min(1)
   FOOD_QUERY_MAX_CANDIDATES = 5;
+
+  @Transform(({ value }) => Number(value ?? 0.9))
+  @Min(0.5)
+  @Max(0.99)
+  FOOD_QUERY_PROVIDER_STRONG_CONFIDENCE = 0.99;
 
   @IsOptional()
   @IsString()
@@ -176,7 +217,59 @@ class BizServiceEnvSchema {
   @IsOptional()
   @IsString()
   @IsIn(['true', 'false'])
+  FOOD_QUERY_ENABLE_NUTRITION_LABEL_OCR = 'true';
+
+  @IsOptional()
+  @IsString()
+  @IsIn(['true', 'false'])
   FOOD_QUERY_DEBUG_ENABLED = 'false';
+
+  @IsOptional()
+  @IsString()
+  @IsIn(['true', 'false'])
+  SPEECH_RECOGNITION_ENABLED = 'true';
+
+  @IsOptional()
+  @IsString()
+  SPEECH_ROUTE_CONFIG_PATH = '';
+
+  @IsOptional()
+  @IsString()
+  SPEECH_OPENAI_AK = '';
+
+  @IsOptional()
+  @IsString()
+  SPEECH_OPENAI_MODEL = 'gpt-4o-mini-transcribe';
+
+  @IsOptional()
+  @IsString()
+  SPEECH_OPENAI_BASE_URL = '';
+
+  @Transform(({ value }) => Number(value ?? 30000))
+  @IsInt()
+  @Min(5000)
+  SPEECH_OPENAI_TIMEOUT_MS = 30000;
+
+  @IsOptional()
+  @IsString()
+  TENCENT_SPEECH_SECRET_ID = '';
+
+  @IsOptional()
+  @IsString()
+  TENCENT_SPEECH_SECRET_KEY = '';
+
+  @IsOptional()
+  @IsString()
+  TENCENT_SPEECH_REGION = 'ap-guangzhou';
+
+  @IsOptional()
+  @IsString()
+  TENCENT_SPEECH_ENGINE = '';
+
+  @Transform(({ value }) => Number(value ?? 15000))
+  @IsInt()
+  @Min(3000)
+  TENCENT_SPEECH_TIMEOUT_MS = 15000;
 
   @IsOptional()
   @IsString()

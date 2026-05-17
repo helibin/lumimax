@@ -1,15 +1,13 @@
 import { Controller, Inject } from '@nestjs/common';
 import { normalizeIotVendor } from '@lumimax/config';
 import { AppLogger } from '@lumimax/logger';
-import { IotProviderRegistry } from '@lumimax/iot-kit';
 import { Ctx, EventPattern, Payload, RmqContext } from '@nestjs/microservices';
 import type { CloudIotVendorName } from '../iot.types';
+import { DownlinkDispatchService } from '../pipeline/downlink-dispatch.service';
 import { TopicParserService } from '../pipeline/topic-parser.service';
-import type { IotBridgeDownlinkCommandMessage } from './iot-bridge.rabbitmq';
-import {
-  IOT_BRIDGE_DOWNSTREAM_PUBLISH_EVENT,
-} from './iot-bridge.rabbitmq';
-import { IotDownlinkService } from './iot-downlink.service';
+import type { IotBridgeDownlinkCommandMessage } from '../transport/iot-bridge.rabbitmq';
+import { IOT_BRIDGE_DOWNSTREAM_PUBLISH_EVENT } from '../transport/iot-bridge.rabbitmq';
+import { IotDownlinkService } from '../transport/iot-downlink.service';
 
 const DOWNSTREAM_RETRY_DELAYS_MS = [
   1_000,
@@ -26,14 +24,14 @@ const DOWNSTREAM_RETRY_DELAYS_MS = [
 const DOWNSTREAM_MAX_BACKOFF_ROUNDS = DOWNSTREAM_RETRY_DELAYS_MS.length;
 
 @Controller()
-export class IotDownstreamRabbitmqController {
+export class DownstreamConsumer {
   constructor(
     @Inject(TopicParserService)
     private readonly topicParserService: TopicParserService,
     @Inject(IotDownlinkService)
     private readonly iotDownlinkService: IotDownlinkService,
-    @Inject(IotProviderRegistry)
-    private readonly iotProviderRegistry: IotProviderRegistry,
+    @Inject(DownlinkDispatchService)
+    private readonly downlinkDispatchService: DownlinkDispatchService,
     @Inject(AppLogger)
     private readonly logger: AppLogger,
   ) {}
@@ -47,9 +45,10 @@ export class IotDownstreamRabbitmqController {
       if (await this.skipAlreadyFinalized(payload, context)) {
         return;
       }
-      await this.publishToProvider(payload);
+      this.validatePayload(payload);
+      const vendor = await this.downlinkDispatchService.dispatch(payload);
       await this.iotDownlinkService.markPublishedById(payload.messageId, {
-        provider: await this.resolveProviderName(payload),
+        provider: vendor,
         topic: payload.topic,
       });
       this.ack(context);
@@ -68,10 +67,6 @@ export class IotDownstreamRabbitmqController {
         await delay(retry.delayMs);
       }
       this.nack(context, retry.requeue);
-      if (!retry.requeue) {
-        return;
-      }
-      return;
     }
   }
 
@@ -92,28 +87,10 @@ export class IotDownstreamRabbitmqController {
         topic: payload.topic,
         status: entity.status,
       },
-      IotDownstreamRabbitmqController.name,
+      DownstreamConsumer.name,
     );
     this.ack(context);
     return true;
-  }
-
-  private async publishToProvider(payload: IotBridgeDownlinkCommandMessage): Promise<void> {
-    this.validatePayload(payload);
-    const device = await this.iotDownlinkService.resolveDeviceByIdOrSn(payload.deviceId);
-    if (!device) {
-      throw new PermanentDownstreamError(`device not found: ${payload.deviceId}`);
-    }
-    const vendor = resolveRequestedProvider(payload, device.provider);
-    await this.iotProviderRegistry.getOrThrow(vendor).publish({
-      deviceId: payload.deviceId,
-      deviceName: device.deviceSn ?? device.id,
-      productKey: device.productKey ?? undefined,
-      topic: payload.topic,
-      payload: payload.payload,
-      qos: payload.qos ?? 1,
-      requestId: payload.requestId,
-    });
   }
 
   private validatePayload(payload: IotBridgeDownlinkCommandMessage): void {
@@ -141,9 +118,7 @@ export class IotDownstreamRabbitmqController {
     payload: IotBridgeDownlinkCommandMessage,
     error: unknown,
   ): Promise<void> {
-    const details = {
-      message: error instanceof Error ? error.message : String(error),
-    };
+    const details = { message: error instanceof Error ? error.message : String(error) };
     if (error instanceof PermanentDownstreamError) {
       await this.iotDownlinkService.markFailedById(payload.messageId, details, 'dead');
       this.logger.warn(
@@ -155,7 +130,7 @@ export class IotDownstreamRabbitmqController {
           topic: payload.topic,
           reason: details.message,
         },
-        IotDownstreamRabbitmqController.name,
+        DownstreamConsumer.name,
       );
       return;
     }
@@ -179,20 +154,8 @@ export class IotDownstreamRabbitmqController {
         ...(nextDelayMs !== undefined ? { nextRetryDelayMs: nextDelayMs } : {}),
         reason: details.message,
       },
-      IotDownstreamRabbitmqController.name,
+      DownstreamConsumer.name,
     );
-  }
-
-  private async resolveProviderName(payload: IotBridgeDownlinkCommandMessage): Promise<CloudIotVendorName> {
-    if (payload.provider !== 'auto') {
-      return normalizeIotVendor(payload.provider);
-    }
-    const device = await this.iotDownlinkService.resolveDeviceByIdOrSn(payload.deviceId);
-    return normalizeIotVendor(device?.provider);
-  }
-
-  private ack(context: RmqContext): void {
-    context.getChannelRef().ack(context.getMessage());
   }
 
   private async resolveRetryDecision(
@@ -205,28 +168,16 @@ export class IotDownstreamRabbitmqController {
     const entity = await this.iotDownlinkService.findOutboxMessageById(payload.messageId);
     const retries = Number(entity?.retryCount ?? 0);
     const delayMs = resolveDownstreamRetryDelayMs(retries);
-    return {
-      requeue: delayMs !== undefined,
-      delayMs: delayMs ?? 0,
-    };
+    return { requeue: delayMs !== undefined, delayMs: delayMs ?? 0 };
+  }
+
+  private ack(context: RmqContext): void {
+    context.getChannelRef().ack(context.getMessage());
   }
 
   private nack(context: RmqContext, requeue: boolean): void {
     context.getChannelRef().nack(context.getMessage(), false, requeue);
   }
-}
-
-function resolveRequestedProvider(
-  payload: IotBridgeDownlinkCommandMessage,
-  deviceProvider: string | undefined,
-): CloudIotVendorName {
-  if (payload.provider !== 'auto') {
-    return normalizeIotVendor(payload.provider);
-  }
-  if (!deviceProvider?.trim()) {
-    throw new PermanentDownstreamError(`device provider is missing for ${payload.deviceId}`);
-  }
-  return normalizeIotVendor(deviceProvider);
 }
 
 class PermanentDownstreamError extends Error {}
@@ -236,11 +187,24 @@ function toDownstreamError(error: unknown): unknown {
   if (isPermanentProviderConfigurationError(message)) {
     return new PermanentDownstreamError(message);
   }
+  if (message.startsWith('device not found:')) {
+    return new PermanentDownstreamError(message);
+  }
   return error;
 }
 
 function isPermanentProviderConfigurationError(message: string): boolean {
   return message.includes('EMQX REST publish requires IOT_ACCESS_KEY_ID/IOT_ACCESS_KEY_SECRET');
+}
+
+function resolveRequestedProvider(payload: IotBridgeDownlinkCommandMessage, deviceProvider: string | undefined): CloudIotVendorName {
+  if (payload.provider !== 'auto') {
+    return normalizeIotVendor(payload.provider);
+  }
+  if (!deviceProvider?.trim()) {
+    throw new PermanentDownstreamError(`device provider is missing for ${payload.deviceId}`);
+  }
+  return normalizeIotVendor(deviceProvider);
 }
 
 function resolveDownstreamRetryDelayMs(retryCount: number): number | undefined {

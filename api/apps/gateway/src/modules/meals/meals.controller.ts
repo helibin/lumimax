@@ -10,6 +10,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { EnvService } from '@lumimax/config';
 import { AuthGuard } from '../../guards/auth.guard';
 import { BizDietGrpcAdapter } from '../../grpc/biz-service.grpc-client';
 import { requireUser, resolveTenantScope } from '../../controllers/controller-context.util';
@@ -29,6 +30,7 @@ void GrpcInvokerService;
 @Controller('api/meals')
 export class MealsController {
   constructor(
+    @Inject(EnvService) private readonly envService: EnvService,
     @Inject(GrpcInvokerService) private readonly grpcInvoker: GrpcInvokerService,
     @Inject(BizDietGrpcAdapter) private readonly bizDietGrpcAdapter: BizDietGrpcAdapter,
   ) {}
@@ -64,7 +66,14 @@ export class MealsController {
     @Param('id') id: string,
     @Body() body: AnalyzeMealItemRequestDto,
   ) {
-    return this.invoke(req, 'meals.items.analyze', { id }, {}, toRecord(body));
+    return this.invoke(
+      req,
+      'meals.items.analyze',
+      { id },
+      {},
+      toRecord(body),
+      this.envService.getNumber('GATEWAY_GRPC_MEAL_ANALYZE_TIMEOUT_MS', 20000) ?? 20000,
+    );
   }
 
   @Post(':id/items/:itemId/confirm')
@@ -97,6 +106,7 @@ export class MealsController {
     params: Record<string, unknown>,
     query: Record<string, unknown> = {},
     body: Record<string, unknown> = {},
+    timeoutMs?: number,
   ) {
     const user = requireUser(req);
     const tenantScope = resolveTenantScope(req, user);
@@ -104,6 +114,7 @@ export class MealsController {
       service: 'biz-service',
       operation,
       requestId: req.requestId,
+      timeoutMs,
       call: () =>
         this.bizDietGrpcAdapter.execute({
           operation,

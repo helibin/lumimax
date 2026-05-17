@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { AwsIotSqsConsumer } from '../src/ingress/aws-iot-sqs.consumer';
+import { AwsSqsIngress } from '../src/ingress/aws-sqs/aws-sqs.ingress';
 
-test('AwsIotSqsConsumer does not start when IOT_VENDOR is not aws', async () => {
+test('AwsSqsIngress does not start when IOT_VENDOR is not aws', async () => {
   const previousVendor = process.env.IOT_VENDOR;
   const previousReceiveMode = process.env.IOT_RECEIVE_MODE;
   const previousQueueUrl = process.env.AWS_SQS_QUEUE_URL;
@@ -16,17 +16,20 @@ test('AwsIotSqsConsumer does not start when IOT_VENDOR is not aws', async () => 
     process.env.IOT_RECEIVE_MODE = 'mq';
     process.env.AWS_SQS_QUEUE_URL = 'https://sqs.us-west-2.amazonaws.com/123456789012/test-queue';
 
-    const consumer = new AwsIotSqsConsumer(
+    const consumer = new AwsSqsIngress(
       {
         log(message: string, meta?: Record<string, unknown>) {
           logs.push({ message, meta });
         },
+        warn() {},
+        error() {},
       } as never,
       {
         async poll() {
           pollCalled = true;
           return [];
         },
+        async ack() {},
       } as never,
       {} as never,
       {} as never,
@@ -35,18 +38,7 @@ test('AwsIotSqsConsumer does not start when IOT_VENDOR is not aws', async () => 
     await consumer.onModuleInit();
 
     assert.equal(pollCalled, false);
-    assert.equal(
-      logs.some(
-        (entry) => {
-          const meta = (entry.meta ?? {}) as Record<string, unknown>;
-          return (
-          entry.message === 'AWS IoT SQS 消费器未启用'
-          && meta.vendor === 'emqx'
-          );
-        },
-      ),
-      true,
-    );
+    assert.equal(logs.length, 0);
   } finally {
     restoreEnv('IOT_VENDOR', previousVendor);
     restoreEnv('IOT_RECEIVE_MODE', previousReceiveMode);

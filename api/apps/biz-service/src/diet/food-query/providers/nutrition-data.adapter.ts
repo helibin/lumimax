@@ -1,3 +1,5 @@
+import { getFoodQueryProviderStrongConfidence } from '../food-query-provider.config';
+import { resolveProviderSearchQuery } from '../provider-search-query.util';
 import type {
   FoodNutritionProvider,
   FoodQueryItem,
@@ -10,9 +12,11 @@ import type {
 import type {
   FoodVisionProvider,
   FoodVisionResult,
+  ImageInputType,
   NutritionDataProvider,
 } from '../../interfaces/provider.contracts';
 import { FoodIdentityService } from '../../food/food-identity.service';
+import { pickLocalizedFoodName } from '../../nutrition/nutrition-localization.util';
 
 export class NutritionDataProviderAdapter implements FoodNutritionProvider {
   constructor(
@@ -35,14 +39,29 @@ export class NutritionDataProviderAdapter implements FoodNutritionProvider {
   }
 
   async search(input: ProviderSearchInput): Promise<StandardFoodCandidate[]> {
-    const search = await this.provider.searchFood({
+    const searchQuery = resolveProviderSearchQuery({
       query: input.query,
+      alternateQueries: input.alternateQueries,
+      role: 'primary',
+      market: input.market,
+      countryCode: input.countryCode,
+      locale: input.locale,
+    });
+    const search = await this.provider.searchFood({
+      query: searchQuery,
       locale: input.locale,
       countryCode: input.countryCode,
+      market: input.market,
+      alternateQueries: input.alternateQueries,
       requestId: input.requestId,
     });
-    return Promise.all(
-      search.items.slice(0, 5).map((item) => this.mapSearchItem(item, input.query, input.requestId)),
+    return this.resolveSearchItems(
+      search.items,
+      input.query,
+      input.requestId,
+      'ingredient',
+      3,
+      input,
     );
   }
 
@@ -56,35 +75,105 @@ export class NutritionDataProviderAdapter implements FoodNutritionProvider {
       countryCode: input.countryCode,
       requestId: input.requestId,
     });
-    return Promise.all(
-      search.items.slice(0, 3).map((item) =>
-        this.mapSearchItem(item, input.barcode, input.requestId, 'packaged_food'),
-      ),
+    return this.resolveSearchItems(
+      search.items,
+      input.barcode,
+      input.requestId,
+      'packaged_food',
+      2,
+      {
+        locale: input.locale,
+        countryCode: input.countryCode,
+        market: input.market,
+      },
     );
+  }
+
+  private async resolveSearchItems(
+    items: Array<{ id: string; name: string; brandName?: string; raw?: Record<string, unknown> }>,
+    query: string,
+    requestId: string,
+    type: FoodItemType,
+    maxLookups: number,
+    context: Pick<ProviderSearchInput, 'locale' | 'countryCode' | 'market' | 'alternateQueries'>,
+  ): Promise<StandardFoodCandidate[]> {
+    const rankedItems = items
+      .slice(0, 5)
+      .map((item) => ({
+        item,
+        score: this.foodIdentityService.scoreNameMatch({
+          queryNames: [query],
+          targetName: item.name,
+        }),
+      }))
+      .sort((left, right) => right.score - left.score);
+
+    const searchHits = rankedItems
+      .map(({ item }) => item.raw)
+      .filter((raw): raw is Record<string, unknown> => Boolean(raw));
+
+    const output: StandardFoodCandidate[] = [];
+    const strongConfidence = getFoodQueryProviderStrongConfidence();
+    for (const { item, score } of rankedItems.slice(0, maxLookups)) {
+      const candidate = await this.mapSearchItem(
+        item,
+        query,
+        requestId,
+        type,
+        context,
+        score,
+        searchHits,
+      );
+      output.push(candidate);
+      if (isStrongProviderCandidate(candidate, strongConfidence)) {
+        break;
+      }
+    }
+    return output;
   }
 
   private async mapSearchItem(
     item: { id: string; name: string; brandName?: string; raw?: Record<string, unknown> },
     query: string,
     requestId: string,
-    type: FoodItemType = 'ingredient',
+    type: FoodItemType,
+    context: Pick<ProviderSearchInput, 'locale' | 'countryCode' | 'market' | 'alternateQueries'>,
+    nameScore?: number,
+    searchHits: Array<Record<string, unknown>> = [],
   ): Promise<StandardFoodCandidate> {
     const nutrition = await this.provider.getNutrition({
       id: item.id,
-      query: item.name || query,
+      query,
       weightGram: 100,
       requestId,
+      locale: context.locale,
+      countryCode: context.countryCode,
+      market: context.market,
+      alternateQueries: context.alternateQueries,
+      raw: item.raw,
+      searchHits,
+    });
+    const fallbackName = nutrition.name || item.name || query;
+    const displayName = pickLocalizedFoodName({
+      locale: context.locale,
+      fallbackName,
+      queryName: query,
+      aliases: [item.name],
+      raw: {
+        searchMatch: item.raw,
+        nutrition: nutrition.raw,
+      },
     });
     const identity = this.foodIdentityService.buildIdentity({
-      name: nutrition.name || item.name || query,
-      aliases: [query, item.name],
+      name: displayName,
+      aliases: [query, item.name, fallbackName],
       sourceType: 'provider',
     });
     return {
       sourceCode: this.code,
       externalFoodId: item.id,
       type,
-      displayName: nutrition.name || item.name || query,
+      displayName,
       normalizedName: identity.normalizedName,
       brandName: item.brandName,
       nutrientsPer100g: {
@@ -93,7 +182,10 @@ export class NutritionDataProviderAdapter implements FoodNutritionProvider {
         fatGram: round(nutrition.fat),
         carbsGram: round(nutrition.carbs),
       },
-      confidence: 0.75,
+      confidence: roundConfidence(resolveProviderConfidence(nameScore ?? this.foodIdentityService.scoreNameMatch({
+        queryNames: [query],
+        targetName: displayName,
+      }), nutrition)),
       verifiedLevel: 'provider_verified',
       rawPayload: {
         searchMatch: item.raw,
@@ -131,11 +223,14 @@ export class VisionProviderAdapter implements FoodNutritionProvider {
     locale?: string;
     countryCode?: string;
     requestId: string;
-  }): Promise<FoodQueryItem[]> {
+  }): Promise<{ imageType?: ImageInputType; items: FoodQueryItem[] }> {
     const result = await this.provider.identifyFood(input);
-    return result.items
-      .map((item) => mapVisionItemToFoodQueryItem(item))
-      .filter((item) => item.name.trim());
+    return {
+      imageType: result.imageType,
+      items: result.items
+        .map((item) => mapVisionItemToFoodQueryItem(item))
+        .filter((item) => item.name.trim()),
+    };
   }
 }
 
@@ -160,4 +255,46 @@ function mapVisionItemToFoodQueryItem(item: VisionFoodNode): FoodQueryItem {
 
 function round(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+function resolveProviderConfidence(
+  nameScore: number,
+  nutrition: {
+    calories: number;
+    protein: number;
+    fat: number;
+    carbs: number;
+  },
+): number {
+  const completenessBoost = hasCoreNutrition(nutrition) ? 0.08 : 0;
+  return Math.max(0.55, Math.min(0.97, 0.62 + nameScore * 0.27 + completenessBoost));
+}
+
+function hasCoreNutrition(input: {
+  calories: number;
+  protein: number;
+  fat: number;
+  carbs: number;
+}): boolean {
+  return input.calories > 0 || input.protein > 0 || input.fat > 0 || input.carbs > 0;
+}
+
+function isStrongProviderCandidate(
+  candidate: StandardFoodCandidate,
+  strongConfidence: number,
+): boolean {
+  return Boolean(
+    candidate.nutrientsPer100g
+    && hasCoreNutrition({
+      calories: candidate.nutrientsPer100g.caloriesKcal,
+      protein: candidate.nutrientsPer100g.proteinGram,
+      fat: candidate.nutrientsPer100g.fatGram,
+      carbs: candidate.nutrientsPer100g.carbsGram,
+    })
+    && candidate.confidence >= strongConfidence,
+  );
+}
+
+function roundConfidence(value: number): number {
+  return Math.round(value * 1000) / 1000;
 }

@@ -1,61 +1,64 @@
 import type { VbenFormSchema } from '#/adapter/form';
 import type { VxeTableGridColumns } from '#/adapter/vxe-table';
-import type { WeighingApi } from '#/api';
+import type { DietApi } from '#/api';
 
 import { formatDateTime } from '@lumimax/utils';
 
 import { $t } from '#/locales';
 
-type RecordActionClickFn = (payload: { code: string; row: WeighingApi.WeighingRecordItem }) => void;
+type UserCommonFoodActionClickFn = (payload: {
+  code: string;
+  row: DietApi.UserCommonFoodItem;
+}) => void;
 
 export function useColumns(
-  onActionClick: RecordActionClickFn,
-): VxeTableGridColumns<WeighingApi.WeighingRecordItem> {
+  onActionClick: UserCommonFoodActionClickFn,
+): VxeTableGridColumns<DietApi.UserCommonFoodItem> {
   return [
     {
-      field: 'deviceId',
-      minWidth: 180,
-      title: $t('diet.deviceId'),
-    },
-    {
       field: 'userId',
-      formatter: ({ cellValue }) => cellValue || '-',
       minWidth: 180,
       title: $t('diet.userId'),
     },
     {
-      field: 'weightValue',
+      field: 'foodName',
+      minWidth: 160,
+      title: $t('diet.foodName'),
+    },
+    {
+      field: 'usageCount',
       minWidth: 100,
-      title: $t('diet.weight'),
+      title: $t('diet.usageCount'),
     },
     {
-      field: 'weightUnit',
-      minWidth: 90,
-      title: $t('diet.unit'),
+      field: 'defaultWeightGram',
+      formatter: ({ cellValue }) => (cellValue != null ? String(cellValue) : '-'),
+      minWidth: 120,
+      title: $t('diet.defaultWeightGram'),
     },
     {
-      field: 'imageObjectIds',
-      formatter: ({ cellValue }) => (Array.isArray(cellValue) ? String(cellValue.length) : '0'),
-      minWidth: 90,
-      title: $t('diet.imageCount'),
+      field: 'caloriesPer100g',
+      formatter: ({ cellValue }) => (cellValue != null ? String(cellValue) : '-'),
+      minWidth: 110,
+      title: $t('diet.totalCalories'),
     },
     {
-      field: 'measuredAt',
+      field: 'foodId',
+      formatter: ({ cellValue }) => cellValue || '-',
+      minWidth: 180,
+      title: $t('diet.recordId'),
+    },
+    {
+      field: 'lastUsedAt',
       formatter: ({ cellValue }) => formatDateTime(cellValue),
       minWidth: 180,
-      title: $t('diet.measuredAt'),
-    },
-    {
-      field: 'createdAt',
-      formatter: ({ cellValue }) => formatDateTime(cellValue),
-      minWidth: 180,
-      title: $t('diet.createdAt'),
+      title: $t('diet.lastUsedAt'),
     },
     {
       align: 'right',
       cellRender: {
         attrs: {
-          nameField: 'id',
+          nameField: 'foodName',
           onClick: onActionClick,
         },
         name: 'CellOperation',

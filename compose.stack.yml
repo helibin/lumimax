@@ -8,7 +8,7 @@
 #   cp docker/.env.example .env
 #   docker compose -f compose.stack.yml up -d --build
 #   docker compose -f compose.stack.yml logs -f lumimax
-# ======================================================================
+# ==============================================================
 
 include:
   - path: compose.infra.yml
@@ -21,7 +21,7 @@ services:
       args:
         ADMIN_BASE: ${ADMIN_BASE:-/admin/}
         WWW_BASE: ${WWW_BASE:-/}
-    image: lumimax:latest
+    image: ${LUMIMAX_IMAGE:-lumimax:latest}
     container_name: lumimax
     restart: unless-stopped
     depends_on:
@@ -65,9 +65,15 @@ services:
 
       IOT_VENDOR: ${IOT_VENDOR:-emqx}
       IOT_RECEIVE_MODE: ${IOT_RECEIVE_MODE:-mq}
-      EMQX_BROKER_URL: ${EMQX_BROKER_URL:-mqtt://emqx:1883}
+      EMQX_BROKER_URL: ${EMQX_BROKER_URL:-mqtts://emqx:8883}
+      EMQX_DEVICE_ENDPOINT: ${EMQX_DEVICE_ENDPOINT:-mqtts://127.0.0.1:8883}
       EMQX_HTTP_BASE_URL: ${EMQX_HTTP_BASE_URL:-http://emqx:18083}
       EMQX_AUTH_SECRET: ${EMQX_AUTH_SECRET:-replace-with-long-random-token}
+      EMQX_MQTT_USERNAME: ${EMQX_MQTT_USERNAME:-lumimax_iot}
+      EMQX_MQTT_CLIENT_CERT_PEM_PATH: ${EMQX_MQTT_CLIENT_CERT_PEM_PATH:-/app/certs/emqx/iot-service.crt}
+      EMQX_MQTT_CLIENT_KEY_PEM_PATH: ${EMQX_MQTT_CLIENT_KEY_PEM_PATH:-/app/certs/emqx/iot-service.key}
+      EMQX_ROOT_CA_PEM_PATH: ${EMQX_ROOT_CA_PEM_PATH:-/app/certs/emqx/ca.crt}
+      EMQX_ROOT_CA_KEY_PEM_PATH: ${EMQX_ROOT_CA_KEY_PEM_PATH:-/app/certs/emqx/ca.key}
 
       DIET_VISION_PROVIDER: ${DIET_VISION_PROVIDER:-openai}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
@@ -75,6 +81,7 @@ services:
 
     volumes:
       - lumimax-logs:/app/logs
+      - ./docker/emqx/certs:/app/certs/emqx
     healthcheck:
       test:
         - CMD-SHELL

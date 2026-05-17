@@ -189,7 +189,7 @@ function restoreEnv(key: string, value: string | undefined) {
   }
 }
 
-test('authenticate 会在 EMQX_MQTT_PASSWORD 匹配时放行 broker 下行客户端', async () => {
+test('authenticate 会在 EMQX_MQTT_PASSWORD 匹配时放行 iot-service MQTT 客户端', async () => {
   const prevPass = process.env.EMQX_MQTT_PASSWORD;
   const prevUser = process.env.EMQX_MQTT_USERNAME;
   process.env.EMQX_MQTT_PASSWORD = 'downlink-shared-secret';
@@ -207,7 +207,7 @@ test('authenticate 会在 EMQX_MQTT_PASSWORD 匹配时放行 broker 下行客户
     );
 
     const result = await service.authenticate({
-      clientid: 'lumimax-biz-11111111-1111-4111-8111-111111111111',
+      clientid: 'lumimax-iot-service-11111111-1111-4111-8111-111111111111',
       password: 'downlink-shared-secret',
     });
 
@@ -247,7 +247,42 @@ test('authenticate 会在密码不匹配时拒绝 broker 下行客户端', async
   }
 });
 
-test('authorize 会允许 broker 下行客户端执行 publish', async () => {
+test('authorize 会在未显式配置 EMQX_MQTT_USERNAME 时默认放行 lumimax_iot 共享订阅客户端', async () => {
+  const prevUser = process.env.EMQX_MQTT_USERNAME;
+  delete process.env.EMQX_MQTT_USERNAME;
+  try {
+    const service = new EmqxIngressService(
+      {
+        async validateAuthentication() {
+          throw new Error('这里不应该执行到设备鉴权');
+        },
+        async validateTopicAccess() {
+          return {
+            allowed: false,
+            reason: 'client_not_recognized',
+          };
+        },
+      } as never,
+      { warn() {}, debug() {}, info() {}, error() {} } as never,
+      { isEnabled() { return true; }, async publishUplink() {}, async publishDownlinkCommand() {} } as IotMessagePublisherPort,
+      {} as never,
+    );
+
+    const result = await service.authorize({
+      clientid: 'lumimax_iot',
+      username: 'lumimax_iot',
+      topic: 'v1/event/some-device/req',
+      action: 'subscribe',
+    });
+
+    assert.equal(result.result, 'allow');
+    assert.equal(result.is_superuser, false);
+  } finally {
+    restoreEnv('EMQX_MQTT_USERNAME', prevUser);
+  }
+});
+
+test('authorize 会允许 iot-service 客户端向 v1/+/+/res publish', async () => {
   const service = new EmqxIngressService(
     {
       async validateAuthentication() {
@@ -260,16 +295,160 @@ test('authorize 会允许 broker 下行客户端执行 publish', async () => {
   );
 
   const result = await service.authorize({
-    clientid: 'lumimax-biz-33333333-3333-4333-8333-333333333333',
+    clientid: 'lumimax-iot-service-33333333-3333-4333-8333-333333333333',
     topic: 'v1/event/some-device/res',
     action: 'publish',
   });
 
   assert.equal(result.result, 'allow');
-  assert.equal(result.is_superuser, true);
+  assert.equal(result.is_superuser, false);
 });
 
-test('authorize 会拒绝 broker 下行客户端执行 subscribe', async () => {
+test('authorize 会允许 iot-service 客户端订阅 $share 共享 topic', async () => {
+  const prevGroup = process.env.EMQX_SHARED_SUBSCRIPTION_GROUP;
+  process.env.EMQX_SHARED_SUBSCRIPTION_GROUP = 'lumimax-iot';
+  try {
+    const service = new EmqxIngressService(
+      {
+        async validateAuthentication() {
+          throw new Error('这里不应该执行到设备鉴权');
+        },
+        async validateTopicAccess() {
+          return {
+            allowed: false,
+            reason: 'client_not_recognized',
+          };
+        },
+      } as never,
+      { warn() {}, debug() {}, info() {}, error() {} } as never,
+      { isEnabled() { return true; }, async publishUplink() {}, async publishDownlinkCommand() {} } as IotMessagePublisherPort,
+      {} as never,
+    );
+
+    const result = await service.authorize({
+      clientid: 'lumimax-iot-service-44444444-4444-4444-8444-444444444444',
+      topic: '$share/lumimax-iot/v1/event/some-device/req',
+      action: 'subscribe',
+    });
+
+    assert.equal(result.result, 'allow');
+    assert.equal(result.is_superuser, false);
+  } finally {
+    restoreEnv('EMQX_SHARED_SUBSCRIPTION_GROUP', prevGroup);
+  }
+});
+
+test('authorize 会允许 EMQX 传入去掉 $share 前缀后的共享订阅 topic', async () => {
+  const prevUser = process.env.EMQX_MQTT_USERNAME;
+  process.env.EMQX_MQTT_USERNAME = 'lumimax_iot';
+  try {
+    const service = new EmqxIngressService(
+      {
+        async validateAuthentication() {
+          throw new Error('这里不应该执行到设备鉴权');
+        },
+        async validateTopicAccess() {
+          return {
+            allowed: false,
+            reason: 'client_not_recognized',
+          };
+        },
+      } as never,
+      { warn() {}, debug() {}, info() {}, error() {} } as never,
+      { isEnabled() { return true; }, async publishUplink() {}, async publishDownlinkCommand() {} } as IotMessagePublisherPort,
+      {} as never,
+    );
+
+    const result = await service.authorize({
+      clientid: 'lumimax-iot-service-12121212-1212-4212-8212-121212121212',
+      username: 'lumimax_iot',
+      cert_common_name: 'lumimax_iot',
+      topic: 'v1/event/some-device/req',
+      action: 'subscribe',
+    });
+
+    assert.equal(result.result, 'allow');
+    assert.equal(result.is_superuser, false);
+  } finally {
+    restoreEnv('EMQX_MQTT_USERNAME', prevUser);
+  }
+});
+
+test('authorize 会允许 iot-service X.509 客户端订阅 $share 共享 topic', async () => {
+  const prevGroup = process.env.EMQX_SHARED_SUBSCRIPTION_GROUP;
+  const prevUser = process.env.EMQX_MQTT_USERNAME;
+  process.env.EMQX_SHARED_SUBSCRIPTION_GROUP = 'lumimax-iot';
+  process.env.EMQX_MQTT_USERNAME = 'lumimax_iot';
+  try {
+    const service = new EmqxIngressService(
+      {
+        async validateAuthentication() {
+          throw new Error('这里不应该执行到设备鉴权');
+        },
+        async validateTopicAccess() {
+          return {
+            allowed: false,
+            reason: 'client_not_recognized',
+          };
+        },
+      } as never,
+      { warn() {}, debug() {}, info() {}, error() {} } as never,
+      { isEnabled() { return true; }, async publishUplink() {}, async publishDownlinkCommand() {} } as IotMessagePublisherPort,
+      {} as never,
+    );
+
+    const result = await service.authorize({
+      clientid: 'lumimax_iot',
+      username: 'lumimax_iot',
+      cert_common_name: 'lumimax_iot',
+      topic: '$share/lumimax-iot/v1/event/some-device/req',
+      action: 'subscribe',
+    });
+
+    assert.equal(result.result, 'allow');
+    assert.equal(result.is_superuser, false);
+  } finally {
+    restoreEnv('EMQX_SHARED_SUBSCRIPTION_GROUP', prevGroup);
+    restoreEnv('EMQX_MQTT_USERNAME', prevUser);
+  }
+});
+
+test('authorize 会在 username 命中 EMQX_MQTT_USERNAME 时放行内部共享订阅客户端', async () => {
+  const prevUser = process.env.EMQX_MQTT_USERNAME;
+  process.env.EMQX_MQTT_USERNAME = 'lumimax_iot';
+  try {
+    const service = new EmqxIngressService(
+      {
+        async validateAuthentication() {
+          throw new Error('这里不应该执行到设备鉴权');
+        },
+        async validateTopicAccess() {
+          return {
+            allowed: false,
+            reason: 'client_not_recognized',
+          };
+        },
+      } as never,
+      { warn() {}, debug() {}, info() {}, error() {} } as never,
+      { isEnabled() { return true; }, async publishUplink() {}, async publishDownlinkCommand() {} } as IotMessagePublisherPort,
+      {} as never,
+    );
+
+    const result = await service.authorize({
+      clientid: 'unexpected-client-id',
+      username: 'lumimax_iot',
+      topic: 'v1/event/some-device/req',
+      action: 'subscribe',
+    });
+
+    assert.equal(result.result, 'allow');
+    assert.equal(result.is_superuser, false);
+  } finally {
+    restoreEnv('EMQX_MQTT_USERNAME', prevUser);
+  }
+});
+
+test('authorize 会拒绝 iot-service 客户端订阅非共享 req topic', async () => {
   const service = new EmqxIngressService(
     {
       async validateAuthentication() {
@@ -282,9 +461,65 @@ test('authorize 会拒绝 broker 下行客户端执行 subscribe', async () => {
   );
 
   const result = await service.authorize({
-    clientid: 'lumimax-biz-44444444-4444-4444-8444-444444444444',
+    clientid: 'lumimax-iot-service-44444444-4444-4444-8444-444444444444',
     topic: 'v1/event/some-device/req',
     action: 'subscribe',
+  });
+
+  assert.equal(result.result, 'deny');
+});
+
+test('authorize 会拒绝冒充 iot-service 的 X.509 客户端', async () => {
+  const prevUser = process.env.EMQX_MQTT_USERNAME;
+  process.env.EMQX_MQTT_USERNAME = 'lumimax_iot';
+  try {
+    const service = new EmqxIngressService(
+      {
+        async validateAuthentication() {
+          throw new Error('这里不应该执行到设备鉴权');
+        },
+        async validateTopicAccess() {
+          return {
+            allowed: false,
+            reason: 'client_not_recognized',
+          };
+        },
+      } as never,
+      { warn() {}, debug() {}, info() {}, error() {} } as never,
+      { isEnabled() { return true; }, async publishUplink() {}, async publishDownlinkCommand() {} } as IotMessagePublisherPort,
+      {} as never,
+    );
+
+    const result = await service.authorize({
+      clientid: 'device-001',
+      username: 'device-001',
+      cert_common_name: 'device-001',
+      topic: '$share/lumimax-iot/v1/event/some-device/req',
+      action: 'subscribe',
+    });
+
+    assert.equal(result.result, 'deny');
+  } finally {
+    restoreEnv('EMQX_MQTT_USERNAME', prevUser);
+  }
+});
+
+test('authorize 会拒绝 iot-service 客户端向 req topic publish', async () => {
+  const service = new EmqxIngressService(
+    {
+      async validateAuthentication() {
+        throw new Error('这里不应该执行到设备鉴权');
+      },
+    } as never,
+    { warn() {}, debug() {}, info() {}, error() {} } as never,
+    { isEnabled() { return true; }, async publishUplink() {}, async publishDownlinkCommand() {} } as IotMessagePublisherPort,
+    {} as never,
+  );
+
+  const result = await service.authorize({
+    clientid: 'lumimax-iot-service-55555555-5555-4555-8555-555555555555',
+    topic: 'v1/event/some-device/req',
+    action: 'publish',
   });
 
   assert.equal(result.result, 'deny');

@@ -14,6 +14,7 @@ test('issueEmqxDeviceCertificate supports CA material from file paths', () => {
 
   const previousVendor = process.env.IOT_VENDOR;
   const previousEndpoint = process.env.EMQX_BROKER_URL;
+  const previousDeviceEndpoint = process.env.EMQX_DEVICE_ENDPOINT;
   const previousRegion = process.env.EMQX_REGION;
   const previousCaPem = process.env.EMQX_ROOT_CA_PEM;
   const previousCaKeyPem = process.env.EMQX_ROOT_CA_KEY_PEM;
@@ -47,7 +48,8 @@ test('issueEmqxDeviceCertificate supports CA material from file paths', () => {
     );
 
     process.env.IOT_VENDOR = 'emqx';
-    process.env.EMQX_BROKER_URL = '127.0.0.1:8883';
+    process.env.EMQX_BROKER_URL = 'mqtt://127.0.0.1:1883';
+    process.env.EMQX_DEVICE_ENDPOINT = '127.0.0.1:8883';
     process.env.EMQX_REGION = 'self-hosted';
     delete process.env.EMQX_ROOT_CA_PEM;
     delete process.env.EMQX_ROOT_CA_KEY_PEM;
@@ -72,6 +74,7 @@ test('issueEmqxDeviceCertificate supports CA material from file paths', () => {
   } finally {
     restoreEnv('IOT_VENDOR', previousVendor);
     restoreEnv('EMQX_BROKER_URL', previousEndpoint);
+    restoreEnv('EMQX_DEVICE_ENDPOINT', previousDeviceEndpoint);
     restoreEnv('EMQX_REGION', previousRegion);
     restoreEnv('EMQX_ROOT_CA_PEM', previousCaPem);
     restoreEnv('EMQX_ROOT_CA_KEY_PEM', previousCaKeyPem);

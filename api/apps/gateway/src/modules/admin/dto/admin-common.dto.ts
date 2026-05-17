@@ -66,6 +66,11 @@ export class AdminInitializeDto {
   @IsOptional()
   @IsString()
   usageMode?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true' || value === '1')
+  @IsBoolean()
+  generateBootstrapCerts?: boolean;
 }
 
 export class CreateAdminUserDto {

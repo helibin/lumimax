@@ -56,6 +56,8 @@ test('analyze food item writes recognition log with single image fields', async 
     mealRecordId: 'meal_1',
     userId: 'user_1',
     deviceId: 'device_1',
+    type: 'image',
+    target: 'tmp-file/device/device_1/apple.png',
     imageKey: 'tmp-file/device/device_1/apple.png',
     imageObjectId: 'obj_1',
     weightGram: 80,

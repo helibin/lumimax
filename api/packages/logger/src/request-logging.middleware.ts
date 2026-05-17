@@ -124,6 +124,7 @@ function buildRequestMeta(
     type: firstHeader(req.headers?.accept) ?? null,
     query: stringifyPayload(req.query ?? {}),
     post: method === 'GET' ? '{}' : bodyEnabled ? stringifyPayload(normalizeRequestBody(req.body, maxBodyLength)) : '{}',
+    head: req.headers,
     browser: result.browser.name ?? 'Unknown',
     version: result.browser.version ?? 'Unknown',
     os: result.os.name ?? 'Unknown',

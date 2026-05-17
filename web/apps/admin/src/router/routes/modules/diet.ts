@@ -13,13 +13,40 @@ const routes: RouteRecordRaw[] = [
     path: '/diet',
     children: [
       {
-        path: '/diet/weighing-records',
-        name: 'DietWeighingRecords',
+        path: '/diet/meal-records',
+        name: 'DietMealRecords',
         meta: {
-          icon: 'mdi:scale-bathroom',
-          title: $t('diet.title'),
+          icon: 'mdi:silverware-fork-knife',
+          title: $t('diet.mealTitle'),
         },
-        component: () => import('#/views/diet/weighing-record/list.vue'),
+        component: () => import('#/views/diet/meal-record/list.vue'),
+      },
+      {
+        path: '/diet/recognition-logs',
+        name: 'DietRecognitionLogs',
+        meta: {
+          icon: 'mdi:eye-outline',
+          title: $t('diet.recognitionTitle'),
+        },
+        component: () => import('#/views/diet/recognition-log/list.vue'),
+      },
+      {
+        path: '/diet/internal-foods',
+        name: 'DietInternalFoods',
+        meta: {
+          icon: 'mdi:database-outline',
+          title: $t('diet.internalFoodTitle'),
+        },
+        component: () => import('#/views/diet/internal-food/list.vue'),
+      },
+      {
+        path: '/diet/user-common-foods',
+        name: 'DietUserCommonFoods',
+        meta: {
+          icon: 'mdi:account-heart-outline',
+          title: $t('diet.userCommonFoodTitle'),
+        },
+        component: () => import('#/views/diet/user-common-food/list.vue'),
       },
     ],
   },

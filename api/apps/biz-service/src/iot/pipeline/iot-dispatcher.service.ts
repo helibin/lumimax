@@ -285,8 +285,8 @@ export class IotDispatcherService {
     message: NormalizedBizIotMessage,
   ): Promise<BizIotDispatchResult> {
     const mealRecordId = pickString(message.payload.mealRecordId);
-    const objectKey =
-      pickString(message.payload.imageKey) || pickString(message.payload.image_key);
+    const analysisType = parseFoodAnalysisType(message.payload.type);
+    const target = pickString(message.payload.target);
     const requestedUserId =
       pickString(message.payload.userId) || pickString(message.payload.user_id);
     const weightGrams = pickNumber(message.payload.weight);
@@ -294,15 +294,16 @@ export class IotDispatcherService {
     if (!mealRecordId || !weightGrams) {
       throw new Error('food.analysis.request missing mealRecordId/weight');
     }
-    if (!objectKey) {
-      throw new Error('food.analysis.request missing imageKey');
+    if (!target) {
+      throw new Error('food.analysis.request missing target');
     }
 
     const data = await this.dietFacade.analyzeFoodItem({
       mealRecordId,
       userId: requestedUserId ?? message.deviceId,
       deviceId: message.deviceId,
-      imageKey: objectKey,
+      type: analysisType,
+      target,
       weightGram: weightGrams,
       locale: pickString(message.payload.locale) ?? pickString(message.locale) ?? getDefaultLocale(),
       market: normalizeDietMarket(pickString(message.payload.market)),
@@ -316,21 +317,11 @@ export class IotDispatcherService {
       downlink: {
         topicKind: BizIotTopicKind.EVENT_RES,
         event: 'food.analysis.result',
-        data: {
-          code: 0,
-          msg: 'ok',
+        data: buildFoodAnalysisResultPayload({
+          data,
           mealRecordId,
-          foodItemId: pickString(data.itemId) ?? '',
-          status: 'success',
-          weight: weightGrams,
-          unit: 'g',
-          items: buildFoodAnalysisItems(data),
-          estimatedNutrition: asRecord(data.estimatedNutrition),
-          confirmationOptions: data.confirmationOptions,
-          requiresUserConfirmation: Boolean(data.requiresUserConfirmation),
-          userCommonCandidates: buildUserCommonCandidates(data.confirmationOptions),
-          mealTotal: asRecord(data.mealTotal),
-        },
+          weightGrams,
+        }),
         qos: 1,
       },
     };
@@ -340,33 +331,38 @@ export class IotDispatcherService {
     message: NormalizedBizIotMessage,
   ): Promise<BizIotDispatchResult> {
     const mealRecordId = pickString(message.payload.mealRecordId);
-    const itemId = pickString(message.payload.foodItemId);
+    const foodItemId =
+      pickString(message.payload.foodItemId) || pickString(message.payload.itemId);
     const selectedFoodName =
-      pickString(message.payload.correctedName)
-      || pickString(message.payload.selectedFoodName)
-      || pickString(message.payload.selectedFoodId)
-      || pickString(message.payload.name);
-    const correctedWeightGram = pickNumber(message.payload.correctedWeightGram);
+      pickString(message.payload.selectedFoodName) ||
+      pickString(message.payload.foodName) ||
+      pickString(message.payload.correctedName);
+    const selectedFoodId = pickString(message.payload.selectedFoodId);
+    const requestedUserId =
+      pickString(message.payload.userId) || pickString(message.payload.user_id);
     const correctedCount = pickNumber(message.payload.correctedCount);
+    const weightGram =
+      pickNumber(message.payload.weightGram) ||
+      pickNumber(message.payload.correctedWeightGram) ||
+      pickNumber(message.payload.weight);
 
-    if (!mealRecordId || !itemId || !selectedFoodName) {
+    if (!mealRecordId || !foodItemId || !selectedFoodName) {
       throw new Error('food.analysis.confirm.request missing mealRecordId/foodItemId/selectedFoodName');
     }
 
     const data = await this.dietFacade.confirmFoodItem({
       mealRecordId,
-      itemId,
-      userId: message.deviceId,
+      itemId: foodItemId,
+      userId: requestedUserId ?? message.deviceId,
       foodName: selectedFoodName,
-      selectedFoodId: pickString(message.payload.selectedFoodId),
+      selectedFoodId,
       correctedCount,
       confirmationSource: pickConfirmationSource(message.payload.confirmationSource),
-      weightGram: correctedWeightGram,
+      weightGram,
       locale: pickString(message.payload.locale) ?? pickString(message.locale) ?? getDefaultLocale(),
       market: normalizeDietMarket(pickString(message.payload.market)),
       requestId: message.requestId,
     });
-
     return {
       accepted: true,
       handledBy: 'meal.food.confirm',
@@ -379,7 +375,7 @@ export class IotDispatcherService {
           code: 0,
           msg: 'ok',
           mealRecordId,
-          foodItemId: itemId,
+          foodItemId,
           status: 'confirmed',
           confirmationSource: pickString(data.confirmationSource) ?? 'recognized',
         },
@@ -510,47 +506,78 @@ function buildTemporaryUploadResultPayload(data: Record<string, unknown>): Recor
   return result;
 }
 
-function buildFoodAnalysisItems(data: Record<string, unknown>): Array<Record<string, unknown>> {
-  const rawItems = Array.isArray(data.items) ? data.items : [];
-  return rawItems.map((item) => {
-    const record = asRecord(item);
-    return {
-      foodId: pickString(record.itemId) ?? pickString(data.itemId) ?? '',
-      type: pickString(record.type) ?? 'ingredient',
-      name: pickString(record.name) ?? '',
-      displayName: pickString(record.displayName) ?? pickString(record.name) ?? '',
-      canonicalName: pickString(record.canonicalName) ?? '',
-      quantity: pickNumber(record.quantity) ?? null,
-      measuredWeightGram: pickNumber(record.measuredWeightGram) ?? null,
-      estimatedWeightGram: pickNumber(record.estimatedWeightGram) ?? null,
-      confidence: pickNumber(record.confidence) ?? 0,
-      source: pickString(record.source) ?? 'user_common',
-      provider: pickString(record.provider) ?? '',
-      verifiedLevel: pickString(record.verifiedLevel) ?? null,
-      calories: pickNumber(record.calories) ?? 0,
-      nutrition: {
-        protein: pickNumber(record.protein) ?? 0,
-        fat: pickNumber(record.fat) ?? 0,
-        carbohydrate: pickNumber(record.carbs) ?? 0,
-        fiber: 0,
-      },
-      children: Array.isArray(record.children) ? record.children : [],
-    };
-  });
+function buildFoodAnalysisResultPayload(input: {
+  data: Record<string, unknown>;
+  mealRecordId: string;
+  weightGrams: number;
+}): Record<string, unknown> {
+  const food = buildFoodAnalysisFood(input.data, input.weightGrams);
+  const result: Record<string, unknown> = {
+    code: 0,
+    msg: 'ok',
+    mealRecordId: input.mealRecordId,
+    foodItemId: pickString(input.data.itemId) ?? '',
+    status: 'success',
+    candidates: buildFoodAnalysisCandidates(input.data.confirmationOptions),
+    requiresUserConfirmation: Boolean(input.data.requiresUserConfirmation),
+  };
+  if (food) {
+    result.food = food;
+  }
+  const mealTotal = asRecord(input.data.mealTotal);
+  if (Object.keys(mealTotal).length > 0) {
+    result.mealTotal = mealTotal;
+  }
+  return result;
 }
 
-function buildUserCommonCandidates(value: unknown): Array<Record<string, unknown>> {
+function buildFoodAnalysisFood(
+  data: Record<string, unknown>,
+  weightGrams: number,
+): Record<string, unknown> | null {
+  const rawItems = Array.isArray(data.items) ? data.items : [];
+  if (rawItems.length === 0) {
+    return null;
+  }
+  const record = asRecord(rawItems[0]);
+  const estimatedNutrition = asRecord(data.estimatedNutrition);
+  return {
+    id: pickString(record.itemId) ?? pickString(data.itemId) ?? '',
+    type: pickString(record.type) ?? 'ingredient',
+    name: pickString(record.name) ?? '',
+    displayName: pickString(record.displayName) ?? pickString(record.name) ?? '',
+    canonicalName: pickString(record.canonicalName) ?? '',
+    quantity: pickNumber(record.quantity) ?? null,
+    weightGram: pickNumber(record.measuredWeightGram) ?? weightGrams,
+    estimatedWeightGram: pickNumber(record.estimatedWeightGram) ?? null,
+    confidence: pickNumber(record.confidence) ?? 0,
+    source: pickString(record.source) ?? pickString(estimatedNutrition.source) ?? 'food-query',
+    provider: pickString(record.provider) ?? pickString(estimatedNutrition.provider) ?? '',
+    verifiedLevel: pickString(record.verifiedLevel) ?? pickString(estimatedNutrition.verifiedLevel) ?? null,
+    nutrition: {
+      calories: pickNumber(record.calories) ?? pickNumber(estimatedNutrition.calories) ?? 0,
+      protein: pickNumber(record.protein) ?? pickNumber(estimatedNutrition.protein) ?? 0,
+      fat: pickNumber(record.fat) ?? pickNumber(estimatedNutrition.fat) ?? 0,
+      carbs: pickNumber(record.carbs) ?? pickNumber(estimatedNutrition.carbs) ?? 0,
+      fiber: pickNumber(record.fiber) ?? 0,
+    },
+    children: Array.isArray(record.children) ? record.children : [],
+  };
+}
+
+function buildFoodAnalysisCandidates(value: unknown): Array<Record<string, unknown>> {
   if (!Array.isArray(value)) {
     return [];
   }
   return value
     .map((item) => asRecord(item))
-    .filter((item) => pickString(item.source) === 'user_common_selected')
     .map((item) => ({
       optionId: pickString(item.optionId) ?? '',
       foodName: pickString(item.foodName) ?? '',
       displayName: pickString(item.displayName) ?? pickString(item.foodName) ?? '',
       canonicalName: pickString(item.canonicalName) ?? '',
+      source: pickString(item.source) ?? '',
+      provider: pickString(item.provider) ?? '',
       confidence: pickNumber(item.confidence) ?? null,
     }));
 }
@@ -579,6 +606,22 @@ function summarizeNutrition(items: unknown): Record<string, number> {
     carbohydrate: round(carbohydrate),
     fiber: 0,
   };
+}
+
+function parseFoodAnalysisType(value: unknown): 'image' | 'barcode' | 'text' | 'voice' {
+  switch (pickString(value)?.trim().toLowerCase()) {
+    case 'barcode':
+      return 'barcode';
+    case 'text':
+      return 'text';
+    case 'voice':
+      return 'voice';
+    case 'image':
+    case undefined:
+      return 'image';
+    default:
+      throw new Error('food.analysis.request invalid type');
+  }
 }
 
 function round(value: number): number {

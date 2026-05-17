@@ -3,24 +3,100 @@
 # TLS listeners ready to be enabled once certs are generated under
 # docker/emqx/certs/.
 
+mqtt {
+  max_topic_levels = 16
+  max_qos_allowed = 2
+  retain_available = true
+  wildcard_subscription = true
+  shared_subscription = true
+  # Device mTLS/X.509 mapping: use client cert CN as MQTT username/clientId.
+  # Keep device cert CN equal to deviceId, for example CN=device-001.
+  peer_cert_as_username = "cn"
+  peer_cert_as_clientid = "cn"
+}
+
+authorization {
+  no_match = deny
+  deny_action = ignore
+  cache {
+    enable = true
+    max_size = 64
+    ttl = 1m
+  }
+  sources = [
+    {
+      type = http
+      method = post
+      url = "http://lumimax:80/api/internal/iot/acl"
+      connect_timeout = 5s
+      request_timeout = 10s
+      pool_size = 8
+      enable_pipelining = 100
+      body {
+        clientid = "${clientid}"
+        username = "${username}"
+        peerhost = "${peerhost}"
+        cert_subject = "${cert_subject}"
+        cert_common_name = "${cert_common_name}"
+        topic = "${topic}"
+        action = "${action}"
+      }
+      headers {
+        "Content-Type" = "application/json"
+        "Authorization" = "Bearer replace-with-long-random-token"
+        "X-Request-Source" = "EMQX"
+      }
+    }
+  ]
+}
+
 listeners.tcp.default {
   bind = "0.0.0.0:1883"
   max_connections = 1024000
+  # Internal platform clients continue to use HTTP auth on the plain TCP
+  # listener. This keeps iot-service isolated from the device mTLS flow.
+  authentication = [
+    {
+      mechanism = password_based
+      backend = http
+      method = post
+      url = "http://lumimax:80/api/internal/iot/auth"
+      connect_timeout = 5s
+      request_timeout = 10s
+      pool_size = 8
+      enable_pipelining = 100
+      body {
+        clientid = "${clientid}"
+        username = "${username}"
+        password = "${password}"
+        peerhost = "${peerhost}"
+        cert_subject = "${cert_subject}"
+        cert_common_name = "${cert_common_name}"
+      }
+      headers {
+        "Content-Type" = "application/json"
+        "Authorization" = "Bearer replace-with-long-random-token"
+        "X-Request-Source" = "EMQX"
+      }
+    }
+  ]
 }
 
-# Enable after server certs exist in /opt/emqx/etc/certs/.
-# listeners.ssl.default {
-#   bind = "0.0.0.0:8883"
-#   max_connections = 1024000
-#   ssl_options {
-#     cacertfile = "/opt/emqx/etc/certs/ca.crt"
-#     certfile = "/opt/emqx/etc/certs/server.crt"
-#     keyfile = "/opt/emqx/etc/certs/server.key"
-#     verify = verify_peer
-#     fail_if_no_peer_cert = true
-#   }
-# }
-#
+# Device listener: certificate-only access. Once the client certificate passes
+# mTLS validation, no password-based authenticator should run here.
+listeners.ssl.default {
+  bind = "0.0.0.0:8883"
+  max_connections = 1024000
+  ssl_options {
+    cacertfile = "/opt/emqx/etc/certs/ca.crt"
+    certfile = "/opt/emqx/etc/certs/server.crt"
+    keyfile = "/opt/emqx/etc/certs/server.key"
+    verify = verify_peer
+    fail_if_no_peer_cert = true
+  }
+}
+
+# Uncomment if you also need WebSocket-over-TLS device access.
 # listeners.wss.default {
 #   bind = "0.0.0.0:8084"
 #   max_connections = 1024000
@@ -29,6 +105,8 @@ listeners.tcp.default {
 #     cacertfile = "/opt/emqx/etc/certs/ca.crt"
 #     certfile = "/opt/emqx/etc/certs/server.crt"
 #     keyfile = "/opt/emqx/etc/certs/server.key"
+#     verify = verify_peer
+#     fail_if_no_peer_cert = true
 #   }
 # }
 

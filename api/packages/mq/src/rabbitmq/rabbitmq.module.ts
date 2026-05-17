@@ -15,6 +15,7 @@ import {
   type RabbitMQProfileOptions,
   resolveRabbitMQProfile,
 } from './rabbitmq.profile';
+import { RabbitMQConfirmPublisherService } from './rabbitmq-confirm-publisher.service';
 import { RabbitMQIdempotencyService } from './rabbitmq-idempotency.service';
 import { RabbitMQService } from './rabbitmq.service';
 
@@ -99,9 +100,15 @@ export class RabbitMQModule {
           },
         },
         RabbitMQIdempotencyService,
+        RabbitMQConfirmPublisherService,
         RabbitMQService,
       ],
-      exports: [RabbitMQService, RabbitMQIdempotencyService, RABBITMQ_CLIENT],
+      exports: [
+        RabbitMQService,
+        RabbitMQIdempotencyService,
+        RabbitMQConfirmPublisherService,
+        RABBITMQ_CLIENT,
+      ],
     };
   }
 }

@@ -32,8 +32,8 @@
 建议按下面顺序做：
 
 1. 先起 `postgres / redis / rabbitmq / emqx / lumimax`
-2. 先用 `1883 + HTTP auth/acl` 跑通控制面
-3. 再开启 `8883 + mTLS`
+2. 先生成设备证书和 `iot-service` 内部证书
+3. 统一走 `8883 + mTLS/X.509`
 4. 最后用 `mqttx` 或真实设备做全链路回归
 
 这样可以把“broker 起不来”和“TLS 不通”这两类问题拆开。
@@ -44,11 +44,13 @@
 
 - [docker/emqx/base.hocon](/Volumes/dev/workspace/@ai/lumimax/docker/emqx/base.hocon:1)
 - [tools/emqx/generate-dev-certs.sh](/Volumes/dev/workspace/@ai/lumimax/tools/emqx/generate-dev-certs.sh:1)
+- [tools/emqx/generate-bootstrap-certs.sh](/Volumes/dev/workspace/@ai/lumimax/tools/emqx/generate-bootstrap-certs.sh:1)
 
 用途：
 
 - `base.hocon`：给自建 EMQX 预留 listener 配置入口
-- `generate-dev-certs.sh`：本地生成开发环境用 CA、EMQX 服务端证书、测试设备证书
+- `generate-dev-certs.sh`：本地生成开发环境用 CA、EMQX 服务端证书、测试设备证书，以及 `iot-service` 内部证书
+- `generate-bootstrap-certs.sh`：首次部署可直接生成一套可用的 bootstrap 证书（CA / EMQX / iot-service，可选再带一台设备）
 
 ## 4. 环境变量
 
@@ -57,35 +59,37 @@
 ```env
 IOT_VENDOR=emqx
 IOT_RECEIVE_MODE=callback
-EMQX_BROKER_URL=emqx:8883
+EMQX_BROKER_URL=mqtts://emqx:8883
+EMQX_DEVICE_ENDPOINT=mqtts://127.0.0.1:8883
 EMQX_REGION=self-hosted
 EMQX_AUTH_SECRET=replace-with-long-random-token
 ```
 
 ### 4.1 平台下行：默认 HTTP API（与 AWS / 阿里云等统一）
 
-**硬约束**：自建 EMQX 时，**`iot-service`** 向设备下发，默认走 **EMQX HTTP API**，与 AWS IoT Data Plane、阿里云 IoT OpenAPI 等「控制面 HTTPS」对齐；**不是**让应用容器去 `mqtts://emqx:8883` 发下行（`EMQX_PUBLISH_MODE=mqtt` 仅作例外）。biz-service 只将 `iot.down.publish` 入队。
+**硬约束**：自建 EMQX 时，**`iot-service`** 向设备下发固定走 **EMQX HTTP API**，与 AWS IoT Data Plane、阿里云 IoT OpenAPI 等「控制面 HTTPS」对齐；不是让应用容器去 `mqtts://emqx:8883` 发下行。biz-service 只将 `iot.down.publish` 入队。
 
 ```env
-EMQX_PUBLISH_MODE=http
 EMQX_HTTP_BASE_URL=http://emqx:18083
 IOT_ACCESS_KEY_ID=...
 IOT_ACCESS_KEY_SECRET=...
 ```
 
-- **优先显式配置** `EMQX_HTTP_BASE_URL`，不要依赖从 `EMQX_BROKER_URL=emqx:8883` 推导（易误配成 `https://…:18083` 导致 TLS 握手失败）。
-- `EMQX_BROKER_URL` 仍表示 **MQTT broker**（设备连接、证书联调），常与 `emqx:8883` / `mqtts://…:8883` 同义；与 HTTP API 端口 **18083** 职责不同。
+- **优先显式配置** `EMQX_HTTP_BASE_URL`，不要依赖从 `EMQX_BROKER_URL` 推导（易误配成 `https://…:18083` 导致 TLS 握手失败）。
+- `EMQX_BROKER_URL` 现在专指 **`iot-service` 作为共享订阅 consumer 自己连接 broker 的地址**；方案 A 下推荐 Compose 内网使用 `mqtts://emqx:8883`。
+- `EMQX_DEVICE_ENDPOINT` 专指 **下发给设备的 broker 地址**，推荐显式配置为 `mqtts://<device-facing-host>:8883`。
 - 本地自签：开发可用 `EMQX_HTTP_TLS_INSECURE=true`，或配置 `EMQX_ROOT_CA_PEM` 校验 `https://emqx:18084`；**禁止**对 **18083** 使用 HTTPS（该口在 EMQX 上默认为明文 HTTP）。
 
-仅当 `EMQX_PUBLISH_MODE=mqtt` 时，平台下行才需要下列 MQTT 客户端凭据（一般 **不必** 与 HTTP 下行同时配）：
+`EMQX_MQTT_*` 凭据仍用于 `iot-service` 作为共享订阅 MQTT consumer 连接 EMQX；它们不再用于平台侧下行发布：
 
 ```env
-EMQX_MQTT_USERNAME=
-EMQX_MQTT_PASSWORD=
-# 或 mTLS
-EMQX_MQTT_CLIENT_CERT_PEM=
-EMQX_MQTT_CLIENT_KEY_PEM=
+EMQX_MQTT_USERNAME=lumimax_iot
+EMQX_MQTT_CLIENT_CERT_PEM_PATH=/app/certs/emqx/iot-service.crt
+EMQX_MQTT_CLIENT_KEY_PEM_PATH=/app/certs/emqx/iot-service.key
+EMQX_ROOT_CA_PEM_PATH=/app/certs/emqx/ca.crt
 ```
+
+设备侧不要复用这张内部服务证书；`iot-service` 证书 `CN` 约定为 `lumimax_iot`。
 
 ### 4.2 端口与谁连谁（Compose 内网 vs 宿主机）
 
@@ -93,8 +97,8 @@ EMQX_MQTT_CLIENT_KEY_PEM=
 
 | EMQX 容器端口 | 宿主机映射（默认） | 协议 / 用途 | 谁使用 |
 | --- | --- | --- | --- |
-| **8883** | `8883` | **MQTTS** | **设备**、MQTTX、固件联调（必须对「网外」暴露时映射） |
-| **1883** | `2883` | 明文 MQTT | 本地快速测试（可选，生产设备用 8883） |
+| **8883** | `8883` | **MQTTS + mTLS/X.509** | **设备**、MQTTX、固件联调（必须对「网外」暴露时映射） |
+| **1883** | `2883` | 明文 MQTT + HTTP auth | 仅过渡排障；方案 A 主链路不再依赖 |
 | **18083** | `28083` | **HTTP** REST API + Dashboard | 平台 **HTTP 下行**（Compose 内：`http://emqx:18083`）；本机浏览器/curl 用 `localhost:28083` |
 | **18084** | `28084` | **HTTPS** REST API | 需要 TLS 调 API 时；本机 `https://localhost:28084`；**非** Compose 内 HTTP 下行默认口 |
 
@@ -103,6 +107,7 @@ EMQX_MQTT_CLIENT_KEY_PEM=
 | 调用方 | 应使用的地址 | 不要用 |
 | --- | --- | --- |
 | `lumimax` / `biz-service` / `iot-service` 容器 → EMQX **下行 API** | `http://emqx:18083` | `localhost:18083`、`https://emqx:18083`、`mqtts://emqx:8883` 发 HTTP API |
+| `iot-service` 容器 → EMQX **共享订阅 consumer** | `mqtts://emqx:8883` | `mqtt://emqx:1883`（除非你明确退回密码鉴权） |
 | EMQX → gateway **webhook**（`IOT_RECEIVE_MODE=callback`） | `http://lumimax:80/api/internal/iot/...` | `http://127.0.0.1:4000/...`（容器内 127.0.0.1 不是 gateway） |
 | 宿主机 MQTTX / 真机 → **broker** | `mqtts://127.0.0.1:8883`（或公网 IP:8883） | 18083 / 18084（设备不走 HTTP API 收消息） |
 
@@ -111,9 +116,10 @@ EMQX_MQTT_CLIENT_KEY_PEM=
 端到端：
 
 ```text
-设备 ──MQTTS:8883──► EMQX ◄──HTTP:18083── iot-service（POST /api/v5/publish）
-                              ▲
-                         RabbitMQ（mq 模式下行任务）
+设备 ──MQTTS:8883(mTLS/X.509)──► EMQX ◄──MQTTS:8883(mTLS/X.509)── iot-service
+                                     ◄──HTTP:18083── 平台下行发布（POST /api/v5/publish）
+                                                ▲
+                                           RabbitMQ（mq 模式下行任务）
 ```
 
 ### 4.3 设备证书（CA 签发）
@@ -171,10 +177,66 @@ chmod +x ./tools/emqx/generate-dev-certs.sh
 - `docker/emqx/certs/server.key`
 - `docker/emqx/certs/device.crt`
 - `docker/emqx/certs/device.key`
+- `docker/emqx/certs/iot-service.crt`
+- `docker/emqx/certs/iot-service.key`
 
-### 5.3 开启 TLS listener
+最简 mTLS 约定：
 
-编辑 [docker/emqx/base.hocon](/Volumes/dev/workspace/@ai/lumimax/docker/emqx/base.hocon:1)，把 `listeners.ssl.default` 和需要的话 `listeners.wss.default` 注释去掉，然后重启：
+- 同一套 `ca.crt` 同时给 EMQX 服务端证书和设备证书签名
+- 设备证书 `CN = deviceId`
+- `iot-service` 证书 `CN = lumimax_iot`
+- EMQX 通过 `peer_cert_as_clientid = "cn"` / `peer_cert_as_username = "cn"` 直接把证书 CN 作为设备 `clientId` / `username`
+
+如需给特定设备生成证书：
+
+```bash
+DEVICE_ID=device-001 ./tools/emqx/generate-dev-certs.sh
+```
+
+### 5.2.1 首次部署：快速生成 bootstrap 证书
+
+如果你只是想在首次部署时快速起一套能跑的生产前/内网环境证书，直接用：
+
+```bash
+chmod +x ./tools/emqx/generate-bootstrap-certs.sh
+./tools/emqx/generate-bootstrap-certs.sh
+```
+
+它会在 `docker/emqx/certs` 下生成或复用：
+
+- `ca.crt` / `ca.key`
+- `server.crt` / `server.key`
+- `iot-service.crt` / `iot-service.key`
+
+如需顺手给一台设备也出证书：
+
+```bash
+DEVICE_ID=device-001 ./tools/emqx/generate-bootstrap-certs.sh
+```
+
+常用自定义参数：
+
+```bash
+SERVER_CN=mqtt.example.com \
+SERVER_SANS=DNS:mqtt.example.com,DNS:emqx,IP:10.0.0.12 \
+IOT_SERVICE_CN=lumimax_iot \
+./tools/emqx/generate-bootstrap-certs.sh
+```
+
+说明：
+
+- 这个脚本偏向“首次部署快速落地”，不是完整企业 PKI
+- 已存在的 `ca/server/iot-service` 证书会直接复用，不会每次重签
+- 后续设备证书仍建议由平台通过 `issueEmqxDeviceCertificate()` 签发并落库
+
+### 5.3 设备 listener 约束
+
+当前 [docker/emqx/base.hocon](/Volumes/dev/workspace/@ai/lumimax/docker/emqx/base.hocon:1) 默认就是双 listener：
+
+- `1883`：保留给过渡期排障
+- `8883`：设备和 `iot-service` 都走强制 mTLS，证书 `CN -> clientId/username`
+
+证书到位后重启：
 
 ```bash
 docker compose -f compose.stack.yml restart emqx
@@ -187,9 +249,21 @@ docker compose -f compose.stack.yml restart emqx
 - `18083 -> ${EMQX_DASHBOARD_PORT:-28083}`
 - `18084 -> ${EMQX_DASHBOARD_TLS_PORT:-28084}`
 
+设备 listener 生效后：
+
+- 设备连接 `mqtts://<host>:8883`
+- 客户端必须同时提供：
+  - `ca.crt`
+  - `device.crt`
+  - `device.key`
+- 设备 MQTT `clientId` 会被 EMQX 覆盖为证书 `CN`
+
 ## 6. 配置 EMQX 认证与 ACL
 
-仓库里的后端是按 HTTP 回调模式准备好的，EMQX 端只需要把认证和授权请求转到 `biz-service`。
+现在要分两条链：
+
+- `1883` 过渡 listener：HTTP auth + HTTP ACL
+- `8883` 主 listener：mTLS/X.509 认证 + HTTP ACL
 
 ### 6.1 认证接口
 
@@ -212,10 +286,14 @@ Authorization: Bearer ${EMQX_AUTH_SECRET}
 {
   "clientid": "${clientid}",
   "username": "${username}",
-  "cert_fingerprint": "${cert_fingerprint}",
-  "cert_serial_number": "${cert_serial_number}"
+  "password": "${password}",
+  "peerhost": "${peerhost}",
+  "cert_subject": "${cert_subject}",
+  "cert_common_name": "${cert_common_name}"
 }
 ```
+
+注意：EMQX 5.8 的 Password-Based HTTP auth **不支持** `${cert_fingerprint}` / `${cert_serial_number}`，不要再把这两个占位符塞进认证模板。
 
 仓库返回体已经符合 EMQX 5 HTTP 认证要求：`result`、`is_superuser`、`client_attrs`。
 
@@ -241,8 +319,9 @@ Header 同上。
   "username": "${username}",
   "topic": "${topic}",
   "action": "${action}",
-  "cert_fingerprint": "${cert_fingerprint}",
-  "cert_serial_number": "${cert_serial_number}"
+  "peerhost": "${peerhost}",
+  "cert_subject": "${cert_subject}",
+  "cert_common_name": "${cert_common_name}"
 }
 ```
 

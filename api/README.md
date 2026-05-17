@@ -102,7 +102,7 @@ Gateway 提供统一文档聚合入口：
 - `RABBITMQ_IDEMPOTENCY_TTL_MS`：消费幂等窗口（毫秒，默认 `86400000`）
 - `BASE_SERVICE_GRPC_ENDPOINT / BIZ_SERVICE_GRPC_ENDPOINT`：gateway 调用内部核心服务的 gRPC 地址
 - `IOT_VENDOR` / `IOT_RECEIVE_MODE`：iot-service 与 biz-service 均需一致；`emqx` + `mq` 为默认主线
-- `AWS_SQS_*`、`EMQX_PUBLISH_MODE`、`EMQX_HTTP_*`、`EMQX_MQTT_*`：**仅 iot-service**（传输与下行发布）；详见 `configs/iot-service.env.example`
+- `AWS_SQS_*`、`EMQX_HTTP_*`、`EMQX_MQTT_*`：**仅 iot-service**（传输与下行发布）；详见 `configs/iot-service.env.example`
 - `AWS_IOT_ENDPOINT / AWS_IOT_POLICY_NAME`：设备证书签发（biz-service `device/identity`）与 AWS ingress（iot-service）按需配置
 - `EMQX_BROKER_URL / EMQX_REGION / EMQX_ROOT_CA_*`：biz 签发设备 mTLS；iot 连接 broker / HTTP API
 - `EMQX_AUTH_SECRET`：**gateway** 校验 EMQX webhook / internal auth；与 iot-service 配置一致
@@ -129,7 +129,6 @@ RABBITMQ_EVENTS_EXCHANGE=lumimax.bus
 RABBITMQ_QUEUE=lumimax.q.biz.events
 RABBITMQ_DLX_QUEUE=lumimax.q.dead
 IOT_RABBITMQ_QUEUE=lumimax.q.iot.stream
-EMQX_PUBLISH_MODE=http
 ```
 
 约定：
@@ -457,13 +456,13 @@ IOT_PROTOCOL_VERSION=1.0
 IOT_V1_UPLINK_TOPICS=v1/connect/+/req,v1/connect/+/status,v1/event/+/req,v1/attr/+/res,v1/cmd/+/res
 IOT_RECEIVE_MODE=mq
 AWS_SQS_QUEUE_URL=<queue_url>
-EMQX_BROKER_URL=<emqx-host-or-broker-url>
+EMQX_BROKER_URL=<internal-iot-service-broker-url, usually mqtts://emqx:8883>
+EMQX_DEVICE_ENDPOINT=<device-facing-broker-endpoint, usually mqtts://devices.example.com:8883>
 EMQX_ROOT_CA_PEM=<optional_ca_pem>
 EMQX_ROOT_CA_KEY_PEM=<optional_ca_key_pem>
-EMQX_MQTT_USERNAME=<optional_broker_user>
-EMQX_MQTT_PASSWORD=<optional_broker_password>
-EMQX_MQTT_CLIENT_CERT_PEM=<optional_publish_cert>
-EMQX_MQTT_CLIENT_KEY_PEM=<optional_publish_key>
+EMQX_MQTT_USERNAME=lumimax_iot
+EMQX_MQTT_CLIENT_CERT_PEM=<optional_iot_service_client_cert>
+EMQX_MQTT_CLIENT_KEY_PEM=<optional_iot_service_client_key>
 
 # AWS IoT
 IOT_REGION=ap-southeast-1

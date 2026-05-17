@@ -1,6 +1,6 @@
 # IoT 通讯模块规范
 
-> 状态：**当前生效**（2026-05-16，**v1.4**：`iot-service` 独立进程 + biz 领域 ingest 拆分 + 环境变量分文件）。
+> 状态：**当前生效**（2026-05-17，**v1.5**：EMQX 开源版 + `iot-service` 负责 EMQX <-> RabbitMQ 桥接）。
 > 适用范围：`api/apps/iot-service/`、`api/apps/biz-service/src/iot/`、`api/packages/iot-kit/`；EMQX / AWS broker；RabbitMQ `lumimax.bus`。
 > 上位约束：[`项目架构总览与开发约束.md`](项目架构总览与开发约束.md)。
 > 关联：
@@ -36,9 +36,9 @@ IoT 通讯模块负责"**设备 ↔ 云**链路上的接入、协议归一化、
 
 ```mermaid
 flowchart TB
-    DEV[Device] -- MQTTS 8883 --> EMQX[(EMQX)]
-    EMQX -- iot.up.* --> MQ[(lumimax.bus)]
-    MQ -- upstream/downstream --> IOT[iot-service]
+    DEV[Device] -- MQTTS 8883 --> EMQX[(EMQX OSS)]
+    EMQX -- MQTT 共享订阅 --> IOT[iot-service]
+    IOT -- 标准化/校验/幂等 --> MQ[(lumimax.bus)]
     IOT -- biz.iot.message.received --> MQ
     MQ -- biz queue --> BIZ[biz-service iot]
     BIZ --> DIET[diet] & DEV域[device]
@@ -61,7 +61,7 @@ flowchart TB
 | 服务 | IoT 职责 |
 | --- | --- |
 | `gateway` | 对外 HTTP；`EMQX_AUTH_SECRET` 校验；`IOT_RECEIVE_MODE=callback` 时 webhook 转发至 **iot-service** gRPC（`IngestCloudMessage`） |
-| `iot-service` | EMQX/AWS **ingress**、消费 `lumimax.q.iot.stream`、归一化后发布 `biz.iot.message.received`、执行 `iot.down.publish` 与 **EMQX HTTP 下行** |
+| `iot-service` | EMQX/AWS **ingress**、作为 EMQX MQTT Client 使用**共享订阅**接上行、归一化后发布 `biz.iot.message.received`、消费 `iot.down.publish` 并执行 **EMQX HTTP / MQTT 下行** |
 | `biz-service` | 消费 `lumimax.q.biz.events`（`biz.iot.message.received`）；`IotIngestService` → diet/device；下行意图经 `IotDownlinkService` **入队** `iot.down.publish`（不直连 EMQX API） |
 | `base-service` | 存储 upload token 等；biz/iot 经 gRPC 调用 |
 
@@ -69,7 +69,7 @@ flowchart TB
 
 | 进程 | `main.ts` 连接的 RMQ queue | 处理的 EventPattern |
 | --- | --- | --- |
-| `iot-service` | `IOT_RABBITMQ_QUEUE`（默认 `lumimax.q.iot.stream`） | `iot.up.*`、`iot.down.publish` |
+| `iot-service` | `IOT_RABBITMQ_QUEUE`（默认 `lumimax.q.iot.stream`） | `iot.down.publish` |
 | `biz-service` | `RABBITMQ_QUEUE`（默认 `lumimax.q.biz.events`） | `biz.iot.message.received` |
 
 **禁止**在同一进程内为多个 queue 各挂一套会绑定「全量 `@EventPattern`」的 RMQ 微服务；已拆为两个 Node 进程。
@@ -157,10 +157,16 @@ api/packages/iot-kit/
 | --- | --- | --- |
 | Exchange | `lumimax.bus` | `topic` |
 | 业务队列 | `lumimax.q.biz.events` | 绑定 `biz.#` |
-| IoT 队列 | `lumimax.q.iot.stream` | `iot.up.#`、`iot.down.#` → **iot-service** consumer |
+| IoT 队列 | `lumimax.q.iot.stream` | `iot.down.#` → **iot-service** consumer |
 | 死信 | `lumimax.q.dead` | `dead.#` |
 
 拓扑声明：`iot-service` 启动时 `ensureIotDeadLetterTopology()`（exchange + 三队列 + binding）。
+
+**硬约束**：
+
+- **EMQX 不直接接 RabbitMQ**，不使用 EMQX Enterprise 的内建桥接能力作为主链路。
+- 上行由 **`iot-service` MQTT Client 共享订阅**消费 EMQX，再写入 RabbitMQ。
+- 下行由 **biz-service -> RabbitMQ -> iot-service -> EMQX publish**，不让 EMQX 直接消费 RabbitMQ。
 
 环境变量分文件配置，见 **§10**；勿使用已废弃的 `IOT_BUS_RUNTIME_ROLE`（按进程固定职责，无 env 开关）。
 
@@ -168,24 +174,25 @@ api/packages/iot-kit/
 
 | EventPattern | 方向 | 生产者 | 消费者（目标） |
 | --- | --- | --- | --- |
-| `iot.up.event` | 上行 | EMQX 规则 / bridge | `iot-service` |
-| `iot.up.lifecycle` | 生命周期 | 同上 | `iot-service` |
 | `biz.iot.message.received` | 归一化业务事件 | bridge 发布 | `biz-service` |
 | `iot.down.publish` | 下行任务 | **biz** `IotDownlinkService` 入队 | **iot-service** 消费并发布到云 |
 
+说明：`iot.up.*` 仍可作为内部事件名 / 兼容事件名保留，但在 EMQX 开源版主链路里，**上行源头不是 EMQX -> RabbitMQ**，而是 **EMQX -> iot-service MQTT 共享订阅**。
+
 ### 4.3 上行（`IOT_RECEIVE_MODE=mq`）
 
-设备 → EMQX → `iot.up.*` → 归一化 → `biz.iot.message.received` → `IotIngestService` → diet/device。
+设备 → EMQX → `iot-service` MQTT 共享订阅 → 标准化 / 校验 / 幂等 → `biz.iot.message.received` → `IotIngestService` → diet/device。
 
 `callback`：EMQX HTTP → gateway `/api/internal/iot/*` → **iot-service** gRPC `IngestCloudMessage` → 同上；**勿**与 mq 双开重复消费。
 
 ### 4.4 下行
 
-**biz** `IotDownlinkService` → outbox → `iot.down.publish`（RMQ）→ **iot-service** `IotDownstreamRabbitmqController` → `iot-kit` → **HTTP(S) 云 API** → EMQX → **MQTTS** → 设备。
+**biz** `IotDownlinkService` → outbox → `iot.down.publish`（RMQ）→ **iot-service** `IotDownstreamRabbitmqController` → `iot-kit` → **HTTP(S) 云 API / MQTT publish** → EMQX → **MQTTS** → 设备。
 
-- 平台 → 云：EMQX 默认 `EMQX_PUBLISH_MODE=http`，`POST http://emqx:18083/api/v5/publish`（见 §7.2、runbook）。
+- 平台 → 云：EMQX 固定 `POST http://emqx:18083/api/v5/publish`（见 §7.2、runbook）。
 - 云 → 设备：**8883 MQTTS**。
 - 勿用 RabbitMQ 直连设备；勿让 EMQX 订阅 RabbitMQ 代替应用发布。
+- EMQX 开源版主链路默认采用 **应用桥接**，不是 broker 内建消息桥。
 
 下行失败：按 outbox `retryCount` 退避重试（`IotDownstreamRabbitmqController`，退避档 1s…5min）。
 
@@ -215,7 +222,7 @@ EMQX 强约束：
 - `peer_cert_as_username = cn`，`peer_cert_as_clientid = cn`：从证书 CN 解析 deviceId。
 - AuthN：HTTP webhook 到 gateway → `/api/internal/iot/mqtt/auth` → **iot-service**（`internal-mqtt-auth.service.ts`）。
 - AuthZ：HTTP webhook 到 `/api/internal/iot/mqtt/acl` → **iot-service**。
-- 上行消息：Rule Engine → RabbitMQ `iot.up.*`（mq）或 webhook → gateway → **iot-service** gRPC（callback）。
+- 上行消息：**MQTT 共享订阅** → `iot-service`（mq，生产主线）或 webhook → gateway → **iot-service** gRPC（callback，联调 / fallback）。
 
 > 回调经 **gateway** `internal-iot.controller.ts` 转发至 iot-service；勿在 biz-service 重复挂 HTTP ingress。详见 [`emqx-self-hosted-runbook.md`](emqx-self-hosted-runbook.md)。
 
@@ -249,7 +256,7 @@ v1/{category}/{deviceId}/{direction}
 
 | 模式 | 路径 | 适用 vendor |
 | --- | --- | --- |
-| `mq`（推荐生产） | EMQX 规则 → `iot.up.*` → RMQ → bridge 归一化 → `biz.iot.message.received`；AWS 走 SQS consumer | EMQX / AWS |
+| `mq`（推荐生产） | EMQX MQTT 共享订阅 → `iot-service` 归一化 / 去重 / 发布 `biz.iot.message.received`；AWS 走 SQS consumer | EMQX / AWS |
 | `callback` | EMQX HTTP → gateway `/api/internal/iot/*` → 同上归一化 | EMQX 联调 |
 
 ### 6.2 主线流程：`IotIngestService.ingestCloudMessage`
@@ -393,12 +400,25 @@ iotDownlinkService.publish({
 2. `iot_messages` 落库（`direction=downstream`，含 messageKey 幂等约束）。
 3. 按 vendor 分发（**平台 → 云控制面**，统一以 HTTP/HTTPS API 为主）：
    - `aws` → `IoTDataPlaneClient.PublishCommand`（HTTPS）
-   - `emqx` → **默认** `POST {base}/api/v5/publish`（`EMQX_PUBLISH_MODE=http`）；可选 `mqtt` 长连接发布（非默认）
+   - `emqx` → `POST {base}/api/v5/publish`
 4. 云侧再通过 **MQTT/MQTTS** 将消息送到设备订阅的 topic。
+
+### 7.1.1 桥接可靠性要求
+
+| 机制 | 必须程度 | 说明 |
+| --- | --- | --- |
+| MQTT 自动重连 | 必须 | `iot-service` 与 EMQX 断开后必须自动恢复共享订阅 |
+| RabbitMQ publisher confirm | 必须 | 上行标准化后写入 RabbitMQ 时，必须确认消息已真正进入 MQ |
+| 幂等表 / Redis 去重 | 必须 | 至少按 `deviceId + requestId` 去重；推荐同时落 `iot_messages` |
+| DLQ | 必须 | MQ 消费失败进入死信，保留错误摘要 |
+| 下行命令状态表 | 推荐 | `queued / published / ack / timeout` |
+| ACK 超时扫描 | 推荐 | 设备未回 ACK 时标记超时，必要时触发重发 |
+| QoS 1 | 推荐 | 控制、业务确认、OTA 等核心消息使用 |
+| 心跳 QoS 0 | 推荐 | 高频低价值心跳 / 在线事件避免压垮链路 |
 
 ### 7.2 EMQX 下行细节（`@lumimax/iot-kit` / `EmqxProviderService`）
 
-**默认（硬约束）**：`EMQX_PUBLISH_MODE=http`（未配置时按 `http` 处理）。
+**默认（硬约束）**：EMQX 下行固定走 HTTP API。
 
 HTTP 模式：
 
@@ -407,10 +427,7 @@ HTTP 模式：
 - **不要**对 18083 使用 `https://`（EMQX 该口为明文 HTTP）；TLS API 用 **18084** 且 URL 写 `https://emqx:18084`，或开发环境 `EMQX_HTTP_TLS_INSECURE=true`。
 - 未配置 `EMQX_HTTP_BASE_URL` 时，可从 `EMQX_BROKER_URL` 推导：若 endpoint 为 MQTTS **8883**，代码会映射为 **`http://…:18083`**（见 `resolveEmqxRestBaseUrl`）。
 
-MQTT 模式（`EMQX_PUBLISH_MODE=mqtt`，仅压测或禁 REST 时）：
-
-- 连接 `mqtts://{EMQX_BROKER_URL}`（或显式 broker URL），长连接 `client.publish`。
-- 使用 `EMQX_MQTT_*` / mTLS 材料；clientId 前缀 `lumimax-biz-*`。
+`EMQX_MQTT_*` / mTLS 材料用于 `iot-service` 作为共享订阅 consumer 连接 EMQX，不再用于平台侧下行发布。
 
 端口与 Compose 联调详见 [`docs/emqx-self-hosted-runbook.md`](emqx-self-hosted-runbook.md) §4.1–§4.2。
 
@@ -510,7 +527,6 @@ AWS_SQS_QUEUE_URL=...
 AWS_IOT_ENDPOINT=...
 AWS_IOT_POLICY_NAME=...
 EMQX_BROKER_URL=mqtts://emqx:8883
-EMQX_PUBLISH_MODE=http
 EMQX_HTTP_BASE_URL=http://emqx:18083
 EMQX_ROOT_CA_PEM=...                   # 设备签发 / API TLS
 EMQX_ROOT_CA_KEY_PEM=...
@@ -558,8 +574,8 @@ env 读取必须走 `@lumimax/config`（`getEnvString` 等），**严禁** 在 s
 
 | EventPattern | 说明 |
 | --- | --- |
-| `iot.up.event` | 云侧上行 payload（EMQX 规则入队） |
-| `iot.up.lifecycle` | 连接/断开等 |
+| `iot.up.event` | 云侧上行 payload（兼容事件名；EMQX OSS 主链路由 iot-service 共享订阅产生） |
+| `iot.up.lifecycle` | 连接/断开等（兼容事件名） |
 | `biz.iot.message.received` | 归一化后交给 biz ingest |
 | `iot.down.publish` | 下行发布任务（outbox → provider） |
 
@@ -601,7 +617,7 @@ envelope（外发到 RabbitMQ）：
 
 要求：
 
-- **桥接**（`iot.up.*` → `biz.iot.message.received`）归属 transport / 目标 `iot-service`；**业务出向**（下表）由 biz 域发布。
+- **桥接**（EMQX MQTT 共享订阅 → `biz.iot.message.received`）归属 transport / 目标 `iot-service`；**业务出向**（下表）由 biz 域发布。
 - 其它服务**不要**直接订阅 MQTT。
 - 消费侧（biz/diet、biz/device）必须幂等（按 `(deviceId, requestId, event)` 去重，TTL ≥ 24h）。
 - 失败重试 1s / 5s / 30s，超出进 `*.dlq`。

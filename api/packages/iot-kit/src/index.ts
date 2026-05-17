@@ -1,3 +1,4 @@
+export * from './interfaces/iot-egress-adapter.interface';
 export * from './interfaces/iot-provider.interface';
 export * from './interfaces/iot-ingress-adapter.interface';
 export * from './providers/provider-publish.util';
@@ -7,4 +8,5 @@ export * from './providers/emqx/emqx-broker-downlink.constants';
 export * from './providers/emqx/emqx-provider.service';
 export * from './providers/emqx/emqx-ingress-adapter.service';
 export * from './registry/iot-provider.registry';
+export * from './registry/iot-egress-adapter.registry';
 export * from './registry/iot-ingress-adapter.registry';

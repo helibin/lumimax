@@ -12,11 +12,11 @@ include:
 x-common-env: &common_env
   NODE_ENV: ${NODE_ENV:-production}
   JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
-  RABBITMQ_URL: ${RABBITMQ_URL:-amqp://root:${RABBITMQ_PASSWORD:-rd}@rabbitmq:5672}
+  RABBITMQ_URL: ${RABBITMQ_URL:-amqp://root:${RABBITMQ_PASSWORD}@rabbitmq:5672}
   RABBITMQ_EVENTS_EXCHANGE: ${RABBITMQ_EVENTS_EXCHANGE:-lumimax.bus}
   RABBITMQ_EVENTS_EXCHANGE_TYPE: ${RABBITMQ_EVENTS_EXCHANGE_TYPE:-topic}
   REDIS_URL: ${REDIS_URL:-redis://redis:6379}
-  DB_URL: ${DB_URL:-postgresql://postgres:${POSTGRES_PASSWORD:-rd}@postgres:5432/${POSTGRES_DB:-lumimax}}
+  DB_URL: ${DB_URL:-postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-lumimax}}
   DEFAULT_TENANT_ID: ${DEFAULT_TENANT_ID:-tenant000000000000000}
 
 x-iot-transport-env: &iot_transport_env
@@ -31,18 +31,18 @@ x-iot-transport-env: &iot_transport_env
   AWS_SQS_BATCH_SIZE: ${AWS_SQS_BATCH_SIZE:-5}
   AWS_SQS_IDLE_DELAY_MS: ${AWS_SQS_IDLE_DELAY_MS:-1000}
   EMQX_BROKER_URL: ${EMQX_BROKER_URL:-mqtts://emqx:8883}
+  EMQX_DEVICE_ENDPOINT: ${EMQX_DEVICE_ENDPOINT:-mqtts://devices.example.com:8883}
   EMQX_REGION: ${EMQX_REGION:-self-hosted}
   EMQX_ROOT_CA_PEM: ${EMQX_ROOT_CA_PEM:-}
   EMQX_ROOT_CA_KEY_PEM: ${EMQX_ROOT_CA_KEY_PEM:-}
-  EMQX_ROOT_CA_PEM_PATH: ${EMQX_ROOT_CA_PEM_PATH:-}
-  EMQX_ROOT_CA_KEY_PEM_PATH: ${EMQX_ROOT_CA_KEY_PEM_PATH:-}
-  EMQX_MQTT_USERNAME: ${EMQX_MQTT_USERNAME:-}
+  EMQX_ROOT_CA_PEM_PATH: ${EMQX_ROOT_CA_PEM_PATH:-/app/certs/emqx/ca.crt}
+  EMQX_ROOT_CA_KEY_PEM_PATH: ${EMQX_ROOT_CA_KEY_PEM_PATH:-/app/certs/emqx/ca.key}
+  EMQX_MQTT_USERNAME: ${EMQX_MQTT_USERNAME:-lumimax_iot}
   EMQX_MQTT_PASSWORD: ${EMQX_MQTT_PASSWORD:-}
   EMQX_MQTT_CLIENT_CERT_PEM: ${EMQX_MQTT_CLIENT_CERT_PEM:-}
   EMQX_MQTT_CLIENT_KEY_PEM: ${EMQX_MQTT_CLIENT_KEY_PEM:-}
-  EMQX_MQTT_CLIENT_CERT_PEM_PATH: ${EMQX_MQTT_CLIENT_CERT_PEM_PATH:-}
-  EMQX_MQTT_CLIENT_KEY_PEM_PATH: ${EMQX_MQTT_CLIENT_KEY_PEM_PATH:-}
-  EMQX_PUBLISH_MODE: ${EMQX_PUBLISH_MODE:-http}
+  EMQX_MQTT_CLIENT_CERT_PEM_PATH: ${EMQX_MQTT_CLIENT_CERT_PEM_PATH:-/app/certs/emqx/iot-service.crt}
+  EMQX_MQTT_CLIENT_KEY_PEM_PATH: ${EMQX_MQTT_CLIENT_KEY_PEM_PATH:-/app/certs/emqx/iot-service.key}
   EMQX_HTTP_BASE_URL: ${EMQX_HTTP_BASE_URL:-http://emqx:18083}
   EMQX_HTTP_TLS_INSECURE: ${EMQX_HTTP_TLS_INSECURE:-}
   EMQX_API_KEY: ${EMQX_API_KEY:-}
@@ -175,6 +175,8 @@ services:
       timeout: 5s
       retries: 10
       start_period: 20s
+    volumes:
+      - ../docker/emqx/certs:/app/certs/emqx:ro
     networks:
       - lumimax
 
@@ -204,6 +206,10 @@ services:
       IOT_VENDOR: ${IOT_VENDOR:-emqx}
       IOT_RECEIVE_MODE: ${IOT_RECEIVE_MODE:-mq}
       EMQX_AUTH_SECRET: ${EMQX_AUTH_SECRET:-}
+      EMQX_MQTT_CLIENT_CERT_PEM_PATH: ${EMQX_MQTT_CLIENT_CERT_PEM_PATH:-/app/certs/emqx/iot-service.crt}
+      EMQX_MQTT_CLIENT_KEY_PEM_PATH: ${EMQX_MQTT_CLIENT_KEY_PEM_PATH:-/app/certs/emqx/iot-service.key}
+      EMQX_ROOT_CA_PEM_PATH: ${EMQX_ROOT_CA_PEM_PATH:-/app/certs/emqx/ca.crt}
+      EMQX_ROOT_CA_KEY_PEM_PATH: ${EMQX_ROOT_CA_KEY_PEM_PATH:-/app/certs/emqx/ca.key}
     healthcheck:
       test:
         [
@@ -216,6 +222,8 @@ services:
       timeout: 5s
       retries: 10
       start_period: 20s
+    volumes:
+      - ../docker/emqx/certs:/app/certs/emqx
     networks:
       - lumimax
 

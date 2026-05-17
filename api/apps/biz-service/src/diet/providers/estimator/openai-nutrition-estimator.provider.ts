@@ -6,6 +6,13 @@ import type {
   NutritionEstimateResult,
   NutritionEstimatorProvider,
 } from '../../interfaces/provider.contracts';
+import {
+  buildNutritionEstimatorUserPrompt,
+  NUTRITION_ESTIMATOR_SYSTEM_PROMPT,
+  parseLlmJsonObject,
+  readLlmNumber,
+  readLlmString,
+} from './nutrition-estimator-llm-prompt.util';
 
 @Injectable()
 export class OpenAiNutritionEstimatorProvider implements NutritionEstimatorProvider {
@@ -36,28 +43,27 @@ export class OpenAiNutritionEstimatorProvider implements NutritionEstimatorProvi
         messages: [
           {
             role: 'system',
-            content:
-              'Estimate nutrition and return JSON as {"name":"","calories":0,"protein":0,"fat":0,"carbs":0,"fiber":0,"confidence":0.0}.',
+            content: NUTRITION_ESTIMATOR_SYSTEM_PROMPT,
           },
           {
             role: 'user',
-            content: `food=${input.foodName}; weightGram=${input.weightGram ?? 100}; locale=${input.locale ?? 'unknown'}; country=${input.countryCode ?? 'unknown'}`,
+            content: buildNutritionEstimatorUserPrompt(input),
           },
         ],
       },
     });
 
     const rawContent = response.choices?.[0]?.message?.content ?? '{}';
-    const parsed = parseObject(rawContent);
+    const parsed = parseLlmJsonObject(rawContent);
 
     return {
-      name: stringValue(parsed.name) ?? input.foodName,
-      calories: numberValue(parsed.calories),
-      protein: numberValue(parsed.protein),
-      fat: numberValue(parsed.fat),
-      carbs: numberValue(parsed.carbs),
-      fiber: numberValue(parsed.fiber),
-      confidence: numberValue(parsed.confidence),
+      name: readLlmString(parsed.name) ?? input.foodName,
+      calories: readLlmNumber(parsed.calories),
+      protein: readLlmNumber(parsed.protein),
+      fat: readLlmNumber(parsed.fat),
+      carbs: readLlmNumber(parsed.carbs),
+      fiber: readLlmNumber(parsed.fiber),
+      confidence: readLlmNumber(parsed.confidence),
       source: 'llm_estimator',
       raw: parsed,
     };
@@ -82,22 +88,3 @@ type OpenAiChatCompletionResponse = {
     };
   }>;
 };
-
-function parseObject(value: string): Record<string, unknown> {
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : {};
-  } catch {
-    return {};
-  }
-}
-
-function stringValue(value: unknown): string | undefined {
-  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
-}
-
-function numberValue(value: unknown): number {
-  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
-}

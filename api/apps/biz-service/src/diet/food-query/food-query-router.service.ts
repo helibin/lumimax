@@ -19,6 +19,7 @@ export class FoodQueryRouterService {
     const routeKey = resolveRouteKey({
       inputType: context.inputType,
       foodType: context.foodType,
+      imageType: context.imageType,
       hasBarcode: context.hasBarcode,
     });
     const configured = this.routeConfigService.resolveProviderCodes({
@@ -26,13 +27,34 @@ export class FoodQueryRouterService {
       routeKey,
     });
 
-    const providerCodes = configured.filter((code) => {
+    let providerCodes = configured.filter((code) => {
       if (code === 'nutrition_label_ocr') {
-        return context.inputType === 'ocr_nutrition_label';
+        return shouldPrioritizeNutritionLabelOcr(context.imageType);
       }
       return this.providerRegistry.isEnabled(code);
     });
 
+    if (shouldPrioritizeNutritionLabelOcr(context.imageType)) {
+      providerCodes = prioritizeProvider(providerCodes, 'nutrition_label_ocr');
+    }
+
     return { routeKey, providerCodes };
   }
+}
+
+function shouldPrioritizeNutritionLabelOcr(imageType?: ProviderRouteContext['imageType']): boolean {
+  return imageType === 'nutrition_label'
+    || imageType === 'packaged_food_front'
+    || imageType === 'barcode_or_qr';
+}
+
+function prioritizeProvider(providerCodes: string[], prioritizedCode: string): string[] {
+  const prioritized = providerCodes.filter((code) => code === prioritizedCode);
+  if (prioritized.length === 0) {
+    return providerCodes;
+  }
+  return [
+    ...prioritized,
+    ...providerCodes.filter((code) => code !== prioritizedCode),
+  ];
 }

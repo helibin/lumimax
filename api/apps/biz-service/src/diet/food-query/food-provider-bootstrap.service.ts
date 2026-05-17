@@ -8,6 +8,7 @@ import { VisionProviderFactory } from '../providers/vision/vision-provider.facto
 import { FoodProviderRegistry } from './food-provider-registry';
 import { InternalFoodProvider } from './providers/internal-food.provider';
 import { LlmEstimateFoodProvider } from './providers/llm-estimate-food.provider';
+import { NutritionLabelOcrProvider } from './providers/nutrition-label-ocr.provider';
 import {
   NutritionDataProviderAdapter,
   VisionProviderAdapter,
@@ -19,6 +20,8 @@ export class FoodProviderBootstrapService implements OnModuleInit {
     @Inject(FoodProviderRegistry) private readonly registry: FoodProviderRegistry,
     @Inject(InternalFoodProvider) private readonly internalFoodProvider: InternalFoodProvider,
     @Inject(LlmEstimateFoodProvider) private readonly llmEstimateFoodProvider: LlmEstimateFoodProvider,
+    @Inject(NutritionLabelOcrProvider)
+    private readonly nutritionLabelOcrProvider: NutritionLabelOcrProvider,
     @Inject(BooheeProvider) private readonly booheeProvider: BooheeProvider,
     @Inject(UsdaFdcProvider) private readonly usdaProvider: UsdaFdcProvider,
     @Inject(EdamamProvider) private readonly edamamProvider: EdamamProvider,
@@ -29,12 +32,13 @@ export class FoodProviderBootstrapService implements OnModuleInit {
   onModuleInit(): void {
     this.registry.register(this.internalFoodProvider);
     this.registry.register(this.llmEstimateFoodProvider);
+    this.registry.register(this.nutritionLabelOcrProvider);
     this.registry.register(
       new NutritionDataProviderAdapter(
         'boohee',
         this.booheeProvider,
         this.foodIdentityService,
-        () => isProviderEnabled('BOOHEE_ENABLED', true),
+        () => hasBooheeConfig(),
       ),
     );
     this.registry.register(
@@ -75,4 +79,11 @@ function hasEdamamConfig(): boolean {
     getEnvString('EDAMAM_APP_ID', '')!.trim()
     && getEnvString('EDAMAM_APP_KEY', '')!.trim(),
   );
+}
+
+function hasBooheeConfig(): boolean {
+  return isProviderEnabled('BOOHEE_ENABLED', true)
+    && Boolean(getEnvString('BOOHEE_BASE_URL', '')!.trim())
+    && Boolean(getEnvString('BOOHEE_APP_ID', '')!.trim())
+    && Boolean(getEnvString('BOOHEE_APP_KEY', '')!.trim());
 }

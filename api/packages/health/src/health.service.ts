@@ -1,21 +1,21 @@
 import { Injectable } from '@nestjs/common';
 import { getEnvString } from '@lumimax/config';
-import type { DbPingResult } from '@lumimax/database';
-import { DbService } from '@lumimax/database';
-void DbService;
+import type { DatabaseHealthPingResult } from '@lumimax/database';
+import { DatabaseHealthService } from '@lumimax/database';
+void DatabaseHealthService;
 
 export interface HealthCheckResult {
   status: 'ok' | 'degraded' | 'error';
   service: string;
   timestamp: string;
-  db: DbPingResult;
+  db: DatabaseHealthPingResult;
 }
 
 @Injectable()
 export class HealthService {
-  private readonly dbService: DbService;
+  private readonly dbService: DatabaseHealthService;
 
-  constructor(dbService: DbService) {
+  constructor(dbService: DatabaseHealthService) {
     this.dbService = dbService;
   }
 

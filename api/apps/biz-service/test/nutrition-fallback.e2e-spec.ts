@@ -55,6 +55,8 @@ test('nutrition fallback marks recognition status as fallback', async () => {
     mealRecordId: 'meal_1',
     userId: 'user_1',
     deviceId: 'device_1',
+    type: 'image',
+    target: 'tmp-file/device/device_1/chicken.png',
     imageKey: 'tmp-file/device/device_1/chicken.png',
     weightGram: 100,
     requestId: 'req_fallback',

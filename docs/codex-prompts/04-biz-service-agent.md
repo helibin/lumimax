@@ -132,11 +132,11 @@ IoT provider 抽象
 推荐目录：
 
 ```text
-apps/biz-service/src/iot/
+apps/biz-service/src/iot/（领域 ingest）；传输见 apps/iot-service/
 ├── bridge/
 ├── providers/
 │   ├── aws/
-│   └── aliyun/
+│   └── emqx/
 ├── events/
 ├── dto/
 ├── interfaces/
@@ -443,7 +443,7 @@ NUTRITION_ESTIMATOR_TIMEOUT_MS=15000
 
 ```text
 device   → device-service
-iot      → iot-bridge-service
+iot      → iot-service
 diet     → diet-service
 realtime → realtime-service
 ```

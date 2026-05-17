@@ -100,7 +100,7 @@ function normalizeRecognitionLogItem(payload: unknown): IotApi.RecognitionLogIte
     id: pickString(item.id),
     imageKey: pickString(item.imageKey),
     latencyMs: pickNumber(item.latencyMs),
-    mealId: pickString(item.mealId),
+    mealId: pickString(item.mealRecordId) || pickString(item.mealId),
     provider: pickString(item.provider),
     requestId: pickString(item.requestId),
     status: pickString(item.status),

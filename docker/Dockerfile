@@ -1,7 +1,7 @@
 # syntax=docker.m.daocloud.io/docker/dockerfile:1.18-labs
 
-# Lumimax 单镜像（nginx + 3 个 NestJS + admin/www 静态）
-# - 把 gateway / base-service / biz-service + admin SPA + www SPA + nginx 打进同一镜像，由 supervisord 守护。
+# Lumimax 单镜像（nginx + 4 个 NestJS + admin/www 静态）
+# - 把 gateway / base-service / biz-service / iot-service + admin SPA + www SPA + nginx 打进同一镜像，由 supervisord 守护。
 # - 适合：小规模 / 单机 / 私有化 / Demo。
 #
 # 路由（compose 默认把宿主机 8080 映射到容器 80 / nginx）：
@@ -21,7 +21,7 @@ ARG NODE_IMAGE=ccr.ccs.tencentyun.com/ovlb/node:22-alpine
 
 # ============================================================================
 # Stage 1: API builder
-# 编译 3 个 NestJS 服务（gateway / base-service / biz-service）
+# 编译 4 个 NestJS 服务（gateway / base-service / biz-service / iot-service）
 # 输出：/workspace/api/{apps,packages,internal,data,dist,node_modules}
 # ============================================================================
 FROM ${NODE_IMAGE} AS api-builder
@@ -43,6 +43,7 @@ COPY api/package.json api/pnpm-workspace.yaml api/pnpm-lock.yaml api/turbo.json 
 COPY api/apps/gateway/package.json api/apps/gateway/
 COPY api/apps/base-service/package.json api/apps/base-service/
 COPY api/apps/biz-service/package.json api/apps/biz-service/
+COPY api/apps/iot-service/package.json api/apps/iot-service/
 COPY api/internal/auth/package.json api/internal/auth/
 COPY api/internal/config/package.json api/internal/config/
 COPY api/internal/contracts/package.json api/internal/contracts/
@@ -58,6 +59,7 @@ COPY api/packages/redis/package.json api/packages/redis/
 COPY api/packages/runtime/package.json api/packages/runtime/
 COPY api/packages/storage/package.json api/packages/storage/
 COPY api/packages/validation/package.json api/packages/validation/
+COPY api/packages/iot-kit/package.json api/packages/iot-kit/
 WORKDIR /workspace/api
 
 # pnpm 使用全局 store（/pnpm/store）；runner 必须连同 store 一起 COPY，否则硬链/符号链断开，
@@ -82,7 +84,7 @@ RUN pnpm build:platform
 RUN find ./dist -type f -name '*.map' -delete
 
 # 构建期断言：校验各 app 的 dependencies 在 apps/<app>/node_modules 下均已链接（含 package.json）；见 api/scripts/docker/assert-runtime-resolve.mjs
-RUN node ./scripts/docker/assert-runtime-resolve.mjs /workspace/api
+RUN node ./scripts/docker/assert-runtime-resolve.mjs /workspace/api gateway,base-service,biz-service,iot-service
 
 # 去掉 node_modules 内 Markdown 文档（不影响运行时解析；通常可省数十 MB）
 RUN find ./node_modules -type f \( -name '*.md' -o -name '*.markdown' \) -delete 2>/dev/null || true
@@ -92,7 +94,7 @@ RUN find ./node_modules -type f -name '*.map' -delete 2>/dev/null || true
 
 # 编译完成后删除 TS 源码：运行时只读 dist + proto + SQL；显著减小 COPY 进 runner 的体积
 RUN set -eu; \
-  rm -rf apps/gateway/src apps/base-service/src apps/biz-service/src; \
+  rm -rf apps/gateway/src apps/base-service/src apps/biz-service/src apps/iot-service/src; \
   find ./packages ./internal \( -name node_modules -prune \) -o \( -type d -name src -exec rm -rf {} + \)
 
 # 剪掉 store 中未被当前 node_modules 引用的包（pnpm 官方推荐在镜像打包前执行）
@@ -171,6 +173,7 @@ RUN chmod +x /entrypoint.sh \
 # 4000  -> gateway (loopback only)
 # 4020  -> base-service (loopback only)
 # 4030  -> biz-service (loopback only)
+# 4040  -> iot-service (loopback only)
 EXPOSE 80
 
 # 健康检查由 compose.stack.yml 的 healthcheck 定义（避免镜像内再维护脚本）

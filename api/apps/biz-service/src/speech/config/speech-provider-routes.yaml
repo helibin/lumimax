@@ -1,0 +1,22 @@
+# 语音识别 Provider 按市场优先级（前一项失败则尝试下一项）
+version: v1
+
+routes:
+  cn:
+    default:
+      - tencent
+      - aliyun
+      - iflytek
+      - baidu
+      - funasr
+  us:
+    default:
+      - openai
+      - deepgram
+      - azure
+      - google
+      - faster_whisper
+  global:
+    default:
+      - openai
+      - tencent

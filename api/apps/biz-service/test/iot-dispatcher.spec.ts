@@ -1,24 +1,28 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { IotDispatcherService } from '../src/iot/events/iot-dispatcher.service';
+import { IotDispatcherService } from '../src/iot/pipeline/iot-dispatcher.service';
 import { BizIotTopicKind } from '../src/iot/iot.types';
 
-test('upload token result exposes presigned put fields for device uploads', async () => {
+test('upload token request forces sts credentials mode and returns upload.token.result', async () => {
+  let capturedBody: Record<string, unknown> | null = null;
   const service = new IotDispatcherService(
     {} as never,
     {} as never,
     {
-      async execute() {
+      async execute(input: { body: Record<string, unknown> }) {
+        capturedBody = input.body;
         return {
           provider: 'aws',
-          uploadMode: 'presigned_put',
+          mode: 'credentials',
+          uploadMode: 'sts_credentials',
           bucket: 'bucket-name',
           region: 'ap-southeast-1',
           objectKey: 'tmp-file/device/01habcdefghjkmnpqrstvwxyz0/demo.png',
-          uploadUrl: 'https://bucket-name.s3.ap-southeast-1.amazonaws.com/tmp-file/device/01habcdefghjkmnpqrstvwxyz0/demo.png?X-Amz-Signature=demo',
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'image/png',
+          tmpPrefix: 'tmp-file/device/01habcdefghjkmnpqrstvwxyz0/',
+          credentials: {
+            accessKeyId: 'ASIADEMO',
+            secretAccessKey: 'secret',
+            sessionToken: 'token',
           },
           expiresAt: 1710003800000,
           maxFileSize: 5242880,
@@ -42,24 +46,84 @@ test('upload token result exposes presigned put fields for device uploads', asyn
     receivedAt: new Date('2026-05-01T00:00:00.000Z'),
   });
 
+  assert.equal((capturedBody as Record<string, unknown> | null)?.['mode'], 'credentials');
   assert.equal(result.downlink?.event, 'upload.token.result');
   assert.deepEqual(result.downlink?.data, {
     code: 0,
     msg: 'ok',
     provider: 'aws',
-    uploadMode: 'presigned_put',
+    mode: 'credentials',
+    uploadMode: 'sts_credentials',
     bucket: 'bucket-name',
     region: 'ap-southeast-1',
     objectKey: 'tmp-file/device/01habcdefghjkmnpqrstvwxyz0/demo.png',
-    uploadUrl:
-      'https://bucket-name.s3.ap-southeast-1.amazonaws.com/tmp-file/device/01habcdefghjkmnpqrstvwxyz0/demo.png?X-Amz-Signature=demo',
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'image/png',
+    tmpPrefix: 'tmp-file/device/01habcdefghjkmnpqrstvwxyz0/',
+    credentials: {
+      accessKeyId: 'ASIADEMO',
+      secretAccessKey: 'secret',
+      sessionToken: 'token',
     },
     expiresAt: 1710003800000,
     maxBytes: 5242880,
   });
+  const data = result.downlink?.data as Record<string, unknown>;
+  assert.equal('uploadUrl' in data, false);
+  assert.equal('method' in data, false);
+  assert.equal('headers' in data, false);
+});
+
+test('upload url request forces presigned-url mode and returns upload.url.result', async () => {
+  let capturedBody: Record<string, unknown> | null = null;
+  const service = new IotDispatcherService(
+    {} as never,
+    {} as never,
+    {
+      async execute(input: { body: Record<string, unknown> }) {
+        capturedBody = input.body;
+        return {
+          provider: 'aws',
+          mode: 'presigned-url',
+          uploadMode: 'presigned_put',
+          bucket: 'bucket-name',
+          region: 'ap-southeast-1',
+          objectKey: 'tmp-file/device/device-001/upload_01h0000000000000000000999.jpg',
+          uploadUrl: 'https://bucket-name.s3.ap-southeast-1.amazonaws.com/tmp-file/device/device-001/upload_01h0000000000000000000999.jpg?X-Amz-Signature=demo',
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'image/jpeg',
+          },
+          expiresAt: 1710003800000,
+          maxFileSize: 1048576,
+        };
+      },
+    } as never,
+  );
+
+  const result = await service.dispatch({
+    vendor: 'aws',
+    topic: 'v1/event/device-001/req',
+    topicKind: BizIotTopicKind.EVENT_REQ,
+    deviceId: 'device-001',
+    requestId: '01h0000000000000000000999',
+    event: 'upload.url.request',
+    locale: 'zh-CN',
+    payload: {
+      fileType: 'image/jpeg',
+    },
+    timestamp: Date.now(),
+    receivedAt: new Date('2026-05-01T00:00:00.000Z'),
+  });
+
+  assert.deepEqual(capturedBody, {
+    deviceId: 'device-001',
+    filename: undefined,
+    maxFileSize: undefined,
+    allowedMimeTypes: ['image/jpeg'],
+    mode: 'presigned-url',
+  });
+  assert.equal(result.downlink?.event, 'upload.url.result');
+  assert.equal(result.handledBy, 'upload.url.request');
+  assert.equal((result.downlink?.data as Record<string, unknown>)?.uploadUrl?.toString().includes('X-Amz-Signature'), true);
 });
 
 test('upload token request supports fileType and defaults to maxBytes semantics', async () => {
@@ -72,14 +136,16 @@ test('upload token request supports fileType and defaults to maxBytes semantics'
         capturedBody = input.body;
         return {
           provider: 'aws',
-          uploadMode: 'presigned_put',
+          mode: 'credentials',
+          uploadMode: 'sts_credentials',
           bucket: 'bucket-name',
           region: 'ap-southeast-1',
           objectKey: 'tmp-file/device/device-001/upload_01h0000000000000000000999.jpg',
-          uploadUrl: 'https://bucket-name.s3.ap-southeast-1.amazonaws.com/tmp-file/device/device-001/upload_01h0000000000000000000999.jpg?X-Amz-Signature=demo',
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'image/jpeg',
+          tmpPrefix: 'tmp-file/device/device-001/',
+          credentials: {
+            accessKeyId: 'ASIADEMO',
+            secretAccessKey: 'secret',
+            sessionToken: 'token',
           },
           expiresAt: 1710003800000,
           maxFileSize: 1048576,
@@ -108,6 +174,7 @@ test('upload token request supports fileType and defaults to maxBytes semantics'
     filename: undefined,
     maxFileSize: undefined,
     allowedMimeTypes: ['image/jpeg'],
+    mode: 'credentials',
   });
 });
 
@@ -115,8 +182,8 @@ test('connect.register forwards locale to device activation without trusting cli
   let capturedBody: Record<string, unknown> | null = null;
   const service = new IotDispatcherService(
     {
-      async execute(input: { body: Record<string, unknown> }) {
-        capturedBody = input.body;
+      async activateFromCloud(input: Record<string, unknown>) {
+        capturedBody = input;
         return {
           id: 'device-cn-001',
           status: 'active',
@@ -153,6 +220,9 @@ test('connect.register forwards locale to device activation without trusting cli
     firmwareVersion: '1.2.3',
     hardwareVersion: 'A1',
     protocolVersion: '1.0',
+    networkStatus: undefined,
+    network: undefined,
+    source: 'device_connect_register',
   });
   assert.equal(result.downlink?.event, 'connect.register.result');
   assert.equal(result.downlink?.data?.deviceId, 'device-cn-001');
@@ -254,10 +324,12 @@ test('nutrition analysis result only exposes mealRecordId', async () => {
 });
 
 test('food analysis result uses weight and unit fields', async () => {
+  let capturedInput: Record<string, unknown> | undefined;
   const service = new IotDispatcherService(
     {} as never,
     {
-      async analyzeFoodItem() {
+      async analyzeFoodItem(input: Record<string, unknown>) {
+        capturedInput = input;
         return {
           itemId: '01h0000000000000000000501',
           items: [{
@@ -316,7 +388,8 @@ test('food analysis result uses weight and unit fields', async () => {
     locale: 'zh-CN',
     payload: {
       mealRecordId: '01h0000000000000000000401',
-      imageKey: 'tmp-file/device/device-001/demo.png',
+      type: 'image',
+      target: 'tmp-file/device/device-001/demo.png',
       weight: 123.5,
     },
     timestamp: Date.now(),
@@ -324,44 +397,40 @@ test('food analysis result uses weight and unit fields', async () => {
   });
 
   assert.equal(result.downlink?.event, 'food.analysis.result');
-  assert.equal(result.downlink?.data?.weight, 123.5);
-  assert.equal(result.downlink?.data?.unit, 'g');
-  assert.equal('weightValue' in (result.downlink?.data ?? {}), false);
-  assert.equal('weightUnit' in (result.downlink?.data ?? {}), false);
-  assert.deepEqual(result.downlink?.data?.items, [
-    {
-      foodId: '01h0000000000000000000501',
-      type: 'ingredient',
-      name: 'rice',
-      displayName: '米饭',
-      canonicalName: 'steamed white rice',
-      quantity: 1,
-      measuredWeightGram: 123.5,
-      estimatedWeightGram: 123.5,
-      confidence: 0.92,
-      source: 'usda_fdc',
-      provider: 'usda_fdc',
-      verifiedLevel: 'verified',
-      calories: 120,
-      nutrition: {
-        protein: 2.7,
-        fat: 0.3,
-        carbohydrate: 25.6,
-        fiber: 0,
-      },
-      children: [],
-    },
-  ]);
-  assert.deepEqual(result.downlink?.data?.estimatedNutrition, {
-    calories: 120,
-    protein: 2.7,
-    fat: 0.3,
-    carbs: 25.6,
+  assert.deepEqual(capturedInput, {
+    mealRecordId: '01h0000000000000000000401',
+    userId: 'device-001',
+    deviceId: 'device-001',
+    type: 'image',
+    target: 'tmp-file/device/device-001/demo.png',
+    weightGram: 123.5,
+    locale: 'zh-CN',
+    market: undefined,
+    requestId: '01h0000000000000000000500',
+  });
+  assert.deepEqual(result.downlink?.data?.food, {
+    id: '01h0000000000000000000501',
+    type: 'ingredient',
+    name: 'rice',
+    displayName: '米饭',
+    canonicalName: 'steamed white rice',
+    quantity: 1,
+    weightGram: 123.5,
+    estimatedWeightGram: 123.5,
+    confidence: 0.92,
     source: 'usda_fdc',
     provider: 'usda_fdc',
     verifiedLevel: 'verified',
+    nutrition: {
+      calories: 120,
+      protein: 2.7,
+      fat: 0.3,
+      carbs: 25.6,
+      fiber: 0,
+    },
+    children: [],
   });
-  assert.deepEqual(result.downlink?.data?.confirmationOptions, [{
+  assert.deepEqual(result.downlink?.data?.candidates, [{
     optionId: 'recognized:steamed white rice',
     foodName: 'rice',
     displayName: '米饭',
@@ -371,17 +440,27 @@ test('food analysis result uses weight and unit fields', async () => {
     confidence: 0.92,
   }]);
   assert.equal(result.downlink?.data?.requiresUserConfirmation, false);
-  assert.deepEqual(result.downlink?.data?.userCommonCandidates, []);
-  assert.equal('recognitions' in (result.downlink?.data ?? {}), false);
+  const responseData = result.downlink?.data ?? {};
+  assert.equal('weight' in responseData, false);
+  assert.equal('unit' in responseData, false);
+  assert.equal('items' in responseData, false);
+  assert.equal('estimatedNutrition' in responseData, false);
+  assert.equal('confirmationOptions' in responseData, false);
+  assert.equal('userCommonCandidates' in responseData, false);
+  assert.equal('recognitions' in responseData, false);
 });
 
 test('food analysis falls back to protocol lang when payload locale is absent', async () => {
   let capturedLocale: string | undefined;
+  let capturedType: string | undefined;
+  let capturedTarget: string | undefined;
   const service = new IotDispatcherService(
     {} as never,
     {
-      async analyzeFoodItem(input: { locale?: string }) {
+      async analyzeFoodItem(input: { locale?: string; type?: string; target?: string }) {
         capturedLocale = input.locale;
+        capturedType = input.type;
+        capturedTarget = input.target;
         return {
           itemId: '01h0000000000000000000502',
           items: [{
@@ -432,7 +511,8 @@ test('food analysis falls back to protocol lang when payload locale is absent', 
     locale: 'en-US',
     payload: {
       mealRecordId: '01h0000000000000000000402',
-      imageKey: 'tmp-file/device/device-002/demo.png',
+      type: 'barcode',
+      target: '6923450657713',
       weight: 88,
     },
     timestamp: Date.now(),
@@ -440,9 +520,11 @@ test('food analysis falls back to protocol lang when payload locale is absent', 
   });
 
   assert.equal(capturedLocale, 'en-US');
+  assert.equal(capturedType, 'barcode');
+  assert.equal(capturedTarget, '6923450657713');
 });
 
-test('food analysis result ignores legacy single-food payload fallback', async () => {
+test('food analysis result omits food when analysis items are absent', async () => {
   const service = new IotDispatcherService(
     {} as never,
     {
@@ -481,14 +563,15 @@ test('food analysis result ignores legacy single-food payload fallback', async (
     locale: 'zh-CN',
     payload: {
       mealRecordId: '01h0000000000000000000602',
-      imageKey: 'tmp-file/device/device-legacy/demo.png',
+      target: 'tmp-file/device/device-legacy/demo.png',
       weight: 80,
     },
     timestamp: Date.now(),
     receivedAt: new Date('2026-05-01T00:00:00.000Z'),
   });
 
-  assert.deepEqual(result.downlink?.data?.items, []);
+  assert.deepEqual(result.downlink?.data?.candidates, []);
+  assert.equal(result.downlink?.data?.requiresUserConfirmation, true);
   assert.equal('food' in (result.downlink?.data ?? {}), false);
 });
 

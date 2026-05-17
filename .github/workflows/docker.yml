@@ -1,14 +1,13 @@
-# 构建 lumimax 单镜像并仅推送到自建 Harbor（hub.vlb.cn），结果飞书通知（可选）
+# 构建 lumimax 单镜像并推送到自建 Harbor（hub.vlb.cn），main 可选部署开发环境，结果飞书通知（可选）
 #
-# Secrets：HARBOR_USERNAME / HARBOR_PASSWORD / FEISHU_WEBHOOK（可选）
+# Secrets：HARBOR_USERNAME / HARBOR_PASSWORD / DEV_HOST / DEV_SSH_USER / DEV_SSH_KEY / DEV_DEPLOY_PATH（可选） / FEISHU_WEBHOOK（可选）
 # 可变：env HARBOR_IMAGE（默认 hub.vlb.cn/work/lumimax）
 name: Docker Lumimax
 
 on:
   push:
-    branches: [main, master]
-    tags: ['v*']
-  workflow_dispatch:
+    branches: [main]
+    tags: ['*']
 
 concurrency:
   group: docker-${{ github.workflow }}-${{ github.ref }}
@@ -49,27 +48,61 @@ jobs:
             type=sha
 
       - name: Login to Harbor (hub.vlb.cn)
-        if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || startsWith(github.ref, 'refs/tags/')
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
         uses: docker/login-action@v3
         with:
           registry: hub.vlb.cn
           username: ${{ secrets.HARBOR_USERNAME }}
           password: ${{ secrets.HARBOR_PASSWORD }}
 
-      - name: Build (and push on default branch / tag)
+      - name: Build (and push on main / tag)
         id: build
         uses: docker/build-push-action@v6
         with:
           context: .
           file: docker/Dockerfile
-          push: ${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || startsWith(github.ref, 'refs/tags/') }}
+          push: ${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Deploy to dev
+        if: github.ref == 'refs/heads/main'
+        env:
+          DEV_HOST: ${{ secrets.DEV_HOST }}
+          DEV_DEPLOY_PATH: ${{ secrets.DEV_DEPLOY_PATH }}
+          DEV_SSH_USER: ${{ secrets.DEV_SSH_USER }}
+          DEV_SSH_KEY: ${{ secrets.DEV_SSH_KEY }}
+          HARBOR_USERNAME: ${{ secrets.HARBOR_USERNAME }}
+          HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
+        run: |
+          TARGET_HOST="${DEV_HOST:-}"
+          TARGET_USER="${DEV_SSH_USER:-}"
+          TARGET_KEY="${DEV_SSH_KEY:-}"
+          TARGET_PATH="${DEV_DEPLOY_PATH:-/data/docker/lumimax}"
+
+          if [ -z "${TARGET_HOST}" ] || [ -z "${TARGET_USER}" ] || [ -z "${TARGET_KEY}" ]; then
+            echo "skip dev deploy: target not configured"
+            exit 0
+          fi
+
+          mkdir -p ~/.ssh
+          printf '%s\n' "${TARGET_KEY}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+
+          ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no "${TARGET_USER}@${TARGET_HOST}" '
+            DEPLOY_PATH="'"${TARGET_PATH}"'" &&
+            cd "$DEPLOY_PATH" &&
+            echo "LUMIMAX_IMAGE=hub.vlb.cn/work/lumimax:latest" > .image.env &&
+            docker login hub.vlb.cn -u "'"$HARBOR_USERNAME"'" -p "'"$HARBOR_PASSWORD"'" &&
+            docker compose -f compose.stack.yml --env-file .env --env-file .image.env pull lumimax &&
+            docker compose -f compose.stack.yml --env-file .env --env-file .image.env up -d &&
+            docker image prune -f
+          '
+
       - name: Feishu notify (success)
-        if: success() && (github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || startsWith(github.ref, 'refs/tags/'))
+        if: success() && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))
         env:
           WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
         run: |

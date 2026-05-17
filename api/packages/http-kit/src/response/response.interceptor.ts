@@ -13,6 +13,7 @@ import type {
 import {
   Injectable
 } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import type { Observable} from 'rxjs';
 import { map } from 'rxjs';
 import {
@@ -21,6 +22,7 @@ import {
   resolveLocaleFromRequest,
 } from '@lumimax/contracts';
 import type { ApiResponseEnvelope } from './api-response.interface';
+import { RAW_RESPONSE_METADATA_KEY } from './raw-response.decorator';
 import {
   createPagedResponse,
   createSuccessResponse,
@@ -31,8 +33,21 @@ import {
 
 @Injectable()
 export class ResponseInterceptor implements NestInterceptor {
+  constructor(private readonly reflector: Reflector) {}
+
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     if (context.getType<'http'>() !== 'http') {
+      return next.handle();
+    }
+
+    const handler = context.getHandler();
+    const targetClass = context.getClass();
+    const useRawResponse = readRawResponseMetadata(
+      this.reflector,
+      handler,
+      targetClass,
+    );
+    if (useRawResponse) {
       return next.handle();
     }
 
@@ -90,4 +105,27 @@ export class ResponseInterceptor implements NestInterceptor {
     }
     return 200;
   }
+}
+
+function readRawResponseMetadata(
+  reflector: Reflector,
+  handler: unknown,
+  targetClass: unknown,
+): boolean | undefined {
+  if (typeof handler === 'function') {
+    const handlerValue = reflector.get<boolean>(
+      RAW_RESPONSE_METADATA_KEY,
+      handler,
+    );
+    if (handlerValue !== undefined) {
+      return handlerValue;
+    }
+  }
+  if (typeof targetClass === 'function') {
+    return reflector.get<boolean>(
+      RAW_RESPONSE_METADATA_KEY,
+      targetClass,
+    );
+  }
+  return undefined;
 }

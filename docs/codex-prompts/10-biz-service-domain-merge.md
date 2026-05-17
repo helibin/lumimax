@@ -60,7 +60,7 @@ apps/biz-service/src/
 │   ├── bridge/
 │   ├── providers/
 │   │   ├── aws/
-│   │   └── aliyun/
+│   │   └── emqx/
 │   ├── events/
 │   ├── interfaces/
 │   ├── dto/
@@ -116,7 +116,7 @@ realtime-domain 写 meal / device 核心业务逻辑
 
 ```text
 device-domain   → device-service
-iot-domain      → iot-bridge-service
+iot-domain      → iot-service
 meal-domain     → diet-service / nutrition-service
 realtime-domain → realtime-service
 ```

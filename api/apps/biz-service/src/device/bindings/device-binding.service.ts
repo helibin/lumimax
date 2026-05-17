@@ -64,4 +64,8 @@ export class DeviceBindingService {
     }
     await this.deviceBindingRepository.save(bindings);
   }
+
+  async deleteAllBindings(tenantId: string, deviceId: string): Promise<void> {
+    await this.deviceBindingRepository.delete({ tenantId, deviceId });
+  }
 }

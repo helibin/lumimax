@@ -7,7 +7,17 @@ export interface IdentifyFoodInput {
   requestId?: string;
 }
 
+export type ImageInputType =
+  | 'food_photo'
+  | 'packaged_food_front'
+  | 'nutrition_label'
+  | 'barcode_or_qr'
+  | 'menu_or_receipt'
+  | 'mixed'
+  | 'unknown';
+
 export interface FoodVisionResult {
+  imageType?: ImageInputType;
   items: Array<{
     type?:
       | 'ingredient'
@@ -39,10 +49,29 @@ export interface FoodVisionResult {
   raw?: Record<string, unknown>;
 }
 
+export interface NutritionLabelVisionResult {
+  labelFound?: boolean;
+  productName?: string;
+  brandName?: string;
+  servingSizeText?: string;
+  servingWeightGram?: number;
+  servingsPerContainer?: number;
+  calories?: number;
+  protein?: number;
+  fat?: number;
+  carbs?: number;
+  fiber?: number;
+  sodiumMg?: number;
+  confidence?: number;
+  raw?: Record<string, unknown>;
+}
+
 export interface SearchFoodInput {
   query: string;
   locale?: string;
   countryCode?: string;
+  market?: string;
+  alternateQueries?: string[];
   requestId?: string;
 }
 
@@ -61,6 +90,14 @@ export interface GetNutritionInput {
   query?: string;
   weightGram?: number;
   requestId?: string;
+  locale?: string;
+  countryCode?: string;
+  market?: string;
+  alternateQueries?: string[];
+  /** searchFood 命中行，含 foodNutrients 时可免详情请求 */
+  raw?: Record<string, unknown>;
+  /** 同一次 search 的其它命中，用于详情 404 时复用，避免重复 search */
+  searchHits?: Array<Record<string, unknown>>;
 }
 
 export interface NutritionResult {
@@ -89,6 +126,7 @@ export interface NutritionEstimateResult extends NutritionResult {
 
 export interface FoodVisionProvider {
   identifyFood(input: IdentifyFoodInput): Promise<FoodVisionResult>;
+  parseNutritionLabel?(input: IdentifyFoodInput): Promise<NutritionLabelVisionResult>;
 }
 
 export interface NamedFoodVisionProvider {

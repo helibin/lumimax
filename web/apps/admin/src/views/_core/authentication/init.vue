@@ -6,27 +6,21 @@ import { IconifyIcon } from '@lumimax/icons';
 import { Alert, Button, Card, Descriptions, Radio, Result, message } from 'ant-design-vue';
 
 import type { VbenFormSchema } from '#/adapter/form';
-import { getCachedInitStatusApi, getInitStatusApi, initializeSystemApi } from '#/api';
+import type { AuthApi } from '#/api/core/auth';
+import { getCachedInitStatusApi, getInitStatusApi, initializeSystemApi, setupEmqxCertsApi, setupRabbitmqApi } from '#/api';
 import { useVbenForm, z } from '#/adapter/form';
 import { $t } from '#/locales';
 
 defineOptions({ name: 'SystemInitialize' });
 
-interface InitStatus {
-  databaseReady: boolean;
-  initialized: boolean;
-  initializedAt: null | string;
-  seedMode: string;
-  usageMode: string;
-  warnings: string[];
-}
-
 const router = useRouter();
 
 const loading = ref(false);
+const rabbitmqSetupLoading = ref(false);
+const certSetupLoading = ref(false);
 const submitLoading = ref(false);
 const currentStep = ref(0);
-const initStatus = ref<InitStatus | null>(null);
+const initStatus = ref<AuthApi.InitStatusResult | null>(null);
 const loadError = ref('');
 
 const form = ref({
@@ -163,10 +157,16 @@ const confirmationNotes = computed(() => [
 ]);
 
 const hasWarnings = computed(() => (initStatus.value?.warnings?.length ?? 0) > 0);
+const certsReady = computed(() => initStatus.value?.certsReady ?? false);
+const certWarnings = computed(() => initStatus.value?.certs?.warnings ?? []);
+const certFiles = computed(() => initStatus.value?.certs?.files ?? []);
+const rabbitmqReady = computed(() => initStatus.value?.rabbitmqReady ?? false);
+const rabbitmqProfiles = computed(() => initStatus.value?.rabbitmq?.profiles ?? []);
+const rabbitmqWarnings = computed(() => initStatus.value?.rabbitmq?.warnings ?? []);
 
 const canMoveNext = computed(() => {
   if (currentStep.value === 0) {
-    return Boolean(initStatus.value?.databaseReady);
+    return Boolean(initStatus.value?.databaseReady && initStatus.value?.rabbitmqReady && initStatus.value?.certsReady);
   }
   if (currentStep.value === 1) {
     return (
@@ -205,7 +205,15 @@ async function loadStatus() {
 function nextStep() {
   if (!canMoveNext.value) {
     if (currentStep.value === 0) {
-      message.warning($t('init.setup.messages.databaseNotReady'));
+      if (!initStatus.value?.databaseReady) {
+        message.warning($t('init.setup.messages.databaseNotReady'));
+        return;
+      }
+      if (!initStatus.value?.rabbitmqReady) {
+        message.warning($t('init.setup.messages.rabbitmqNotReady'));
+        return;
+      }
+      message.warning($t('init.setup.messages.certsNotReady'));
       return;
     }
     if (currentStep.value === 1) {
@@ -234,6 +242,7 @@ async function submitInitialization() {
   try {
     await initializeSystemApi({
       email: form.value.email.trim() || undefined,
+      generateBootstrapCerts: true,
       nickname: form.value.nickname.trim(),
       password: form.value.password,
       usageMode: form.value.usageMode,
@@ -249,6 +258,40 @@ async function submitInitialization() {
     message.error(text);
   } finally {
     submitLoading.value = false;
+  }
+}
+
+async function setupEmqxCerts() {
+  if (certSetupLoading.value) {
+    return;
+  }
+  certSetupLoading.value = true;
+  try {
+    await setupEmqxCertsApi();
+    await loadStatus();
+    message.success($t('init.setup.messages.certsInitializeSuccess'));
+  } catch (error) {
+    const text = error instanceof Error ? error.message : $t('init.setup.messages.certsInitializeFailed');
+    message.error(text);
+  } finally {
+    certSetupLoading.value = false;
+  }
+}
+
+async function setupRabbitmq() {
+  if (rabbitmqSetupLoading.value) {
+    return;
+  }
+  rabbitmqSetupLoading.value = true;
+  try {
+    await setupRabbitmqApi();
+    await loadStatus();
+    message.success($t('init.setup.messages.rabbitmqInitializeSuccess'));
+  } catch (error) {
+    const text = error instanceof Error ? error.message : $t('init.setup.messages.rabbitmqInitializeFailed');
+    message.error(text);
+  } finally {
+    rabbitmqSetupLoading.value = false;
   }
 }
 
@@ -346,6 +389,26 @@ onMounted(loadStatus);
                 <div class="info-label">{{ $t('init.setup.databaseStep.seedStrategy') }}</div>
                 <div class="info-value">{{ seedModeText }}</div>
               </div>
+              <div class="info-tile">
+                <div class="info-label">{{ $t('init.setup.rabbitmqStep.connectionStatus') }}</div>
+                <div class="info-value" :class="rabbitmqReady ? 'success-text' : 'warning-text'">
+                  {{
+                    rabbitmqReady
+                      ? $t('init.setup.rabbitmqStep.ready')
+                      : $t('init.setup.rabbitmqStep.unavailable')
+                  }}
+                </div>
+              </div>
+              <div class="info-tile">
+                <div class="info-label">{{ $t('init.setup.certsStep.connectionStatus') }}</div>
+                <div class="info-value" :class="certsReady ? 'success-text' : 'warning-text'">
+                  {{
+                    certsReady
+                      ? $t('init.setup.certsStep.ready')
+                      : $t('init.setup.certsStep.unavailable')
+                  }}
+                </div>
+              </div>
             </div>
 
             <Alert
@@ -353,12 +416,142 @@ onMounted(loadStatus);
               show-icon
               :message="$t('init.setup.databaseStep.info')"
             />
+            <div class="rabbitmq-panel">
+              <div class="rabbitmq-panel-header">
+                <div>
+                  <h3>{{ $t('init.setup.rabbitmqStep.heading') }}</h3>
+                  <p>{{ $t('init.setup.rabbitmqStep.body') }}</p>
+                </div>
+                <Button
+                  type="primary"
+                  ghost
+                  :loading="rabbitmqSetupLoading"
+                  @click="setupRabbitmq"
+                >
+                  <template #icon>
+                    <IconifyIcon icon="lucide:rabbit" />
+                  </template>
+                  {{ $t('init.setup.buttons.initializeRabbitmq') }}
+                </Button>
+              </div>
+
+              <div class="rabbitmq-profile-list">
+                <div
+                  v-for="profile in rabbitmqProfiles"
+                  :key="`${profile.name}:${profile.vhost}`"
+                  class="rabbitmq-profile-card"
+                >
+                  <div class="rabbitmq-profile-top">
+                    <div>
+                      <div class="rabbitmq-profile-name">{{ profile.name }}</div>
+                      <div class="rabbitmq-profile-meta">
+                        vhost={{ profile.vhost }} · exchange={{ profile.exchange.name }}
+                      </div>
+                    </div>
+                    <span :class="['rabbitmq-profile-badge', profile.ready ? 'is-ready' : 'is-pending']">
+                      {{
+                        profile.ready
+                          ? $t('init.setup.rabbitmqStep.ready')
+                          : $t('init.setup.rabbitmqStep.pending')
+                      }}
+                    </span>
+                  </div>
+
+                  <div class="rabbitmq-resource-list">
+                    <div class="rabbitmq-resource-item">
+                      <span>{{ profile.exchange.name }}</span>
+                      <strong>{{ profile.exchange.ready ? 'OK' : '...' }}</strong>
+                    </div>
+                    <div
+                      v-for="queue in profile.queues"
+                      :key="queue.name"
+                      class="rabbitmq-resource-item"
+                    >
+                      <span>{{ queue.name }}</span>
+                      <strong>{{ queue.ready ? 'OK' : '...' }}</strong>
+                    </div>
+                    <div
+                      v-for="exchange in profile.extraExchanges"
+                      :key="exchange.name"
+                      class="rabbitmq-resource-item"
+                    >
+                      <span>{{ exchange.name }}</span>
+                      <strong>{{ exchange.ready ? 'OK' : '...' }}</strong>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="rabbitmq-panel">
+              <div class="rabbitmq-panel-header">
+                <div>
+                  <h3>{{ $t('init.setup.certsStep.heading') }}</h3>
+                  <p>{{ $t('init.setup.certsStep.body') }}</p>
+                </div>
+                <Button
+                  type="primary"
+                  ghost
+                  :loading="certSetupLoading"
+                  @click="setupEmqxCerts"
+                >
+                  <template #icon>
+                    <IconifyIcon icon="lucide:shield-check" />
+                  </template>
+                  {{ $t('init.setup.buttons.initializeCerts') }}
+                </Button>
+              </div>
+
+              <div class="rabbitmq-profile-card">
+                <div class="rabbitmq-profile-top">
+                  <div>
+                    <div class="rabbitmq-profile-name">{{ initStatus?.certs?.certDir ?? '-' }}</div>
+                    <div class="rabbitmq-profile-meta">
+                      {{ $t('init.setup.certsStep.directory') }}
+                    </div>
+                  </div>
+                  <span :class="['rabbitmq-profile-badge', certsReady ? 'is-ready' : 'is-pending']">
+                    {{
+                      certsReady
+                        ? $t('init.setup.certsStep.ready')
+                        : $t('init.setup.certsStep.pending')
+                    }}
+                  </span>
+                </div>
+
+                <div class="rabbitmq-resource-list">
+                  <div
+                    v-for="file in certFiles"
+                    :key="file.path"
+                    class="rabbitmq-resource-item"
+                  >
+                    <span>{{ file.name }}</span>
+                    <strong>{{ file.exists ? 'OK' : '...' }}</strong>
+                  </div>
+                </div>
+              </div>
+            </div>
             <Alert
               v-if="hasWarnings"
               class="status-alert"
               type="warning"
               show-icon
               :message="initStatus?.warnings.join('；')"
+            />
+            <Alert
+              v-if="rabbitmqWarnings.length > 0"
+              class="status-alert"
+              type="warning"
+              show-icon
+              :message="$t('init.setup.rabbitmqStep.warningTitle')"
+              :description="rabbitmqWarnings.join('；')"
+            />
+            <Alert
+              v-if="certWarnings.length > 0"
+              class="status-alert"
+              type="warning"
+              show-icon
+              :message="$t('init.setup.certsStep.warningTitle')"
+              :description="certWarnings.join('；')"
             />
           </template>
 
@@ -704,6 +897,104 @@ onMounted(loadStatus);
   color: #73d13d;
 }
 
+.warning-text {
+  color: #ffb84d;
+}
+
+.rabbitmq-panel {
+  margin-top: 18px;
+  padding: 18px 20px;
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 12px;
+  background: rgb(255 255 255 / 2%);
+}
+
+.rabbitmq-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.rabbitmq-panel-header h3 {
+  margin: 0 0 6px;
+  font-size: 18px;
+}
+
+.rabbitmq-panel-header p {
+  margin: 0;
+  color: rgb(255 255 255 / 60%);
+}
+
+.rabbitmq-profile-list {
+  display: grid;
+  gap: 12px;
+}
+
+.rabbitmq-profile-card {
+  padding: 14px 16px;
+  border: 1px solid rgb(255 255 255 / 8%);
+  border-radius: 12px;
+  background: rgb(255 255 255 / 2%);
+}
+
+.rabbitmq-profile-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.rabbitmq-profile-name {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.rabbitmq-profile-meta {
+  margin-top: 4px;
+  color: rgb(255 255 255 / 55%);
+  font-size: 13px;
+}
+
+.rabbitmq-profile-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.rabbitmq-profile-badge.is-ready {
+  background: rgb(82 196 26 / 16%);
+  color: #95de64;
+}
+
+.rabbitmq-profile-badge.is-pending {
+  background: rgb(250 173 20 / 16%);
+  color: #ffd666;
+}
+
+.rabbitmq-resource-list {
+  display: grid;
+  gap: 8px;
+}
+
+.rabbitmq-resource-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgb(255 255 255 / 3%);
+  color: rgb(255 255 255 / 78%);
+  font-size: 13px;
+}
+
 .mode-grid {
   display: grid;
   gap: 16px;
@@ -890,6 +1181,11 @@ onMounted(loadStatus);
   .info-grid,
   .form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .rabbitmq-panel-header,
+  .rabbitmq-profile-top {
+    flex-direction: column;
   }
 
   .progress-arrow {

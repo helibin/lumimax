@@ -36,7 +36,7 @@ export class DevicesController {
   @ApiQuery({ name: 'keyword', required: false, example: 'SN-001', description: '按设备 SN 或设备 ID 模糊搜索' })
   @ApiQuery({ name: 'status', required: false, example: 'active', description: '设备业务状态筛选' })
   @ApiQuery({ name: 'onlineStatus', required: false, example: 'online', description: '在线状态筛选' })
-  @ApiQuery({ name: 'provider', required: false, example: 'emqx', description: '设备接入 provider 筛选（emqx/aws/aliyun）' })
+  @ApiQuery({ name: 'provider', required: false, example: 'emqx', description: '设备接入 provider 筛选（emqx/aws）' })
   list(@Req() req: any, @Query() query: Record<string, unknown>) {
     return this.invoke(req, 'devices.list', {}, {}, query);
   }
@@ -58,7 +58,7 @@ export class DevicesController {
         },
         provider: {
           type: 'string',
-          enum: ['emqx', 'aws', 'aliyun'],
+          enum: ['emqx', 'aws'],
           example: 'emqx',
           description: '兼容字段，服务端会忽略该值并使用 IOT_VENDOR',
         },

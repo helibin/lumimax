@@ -28,8 +28,7 @@ trigger:
   ref:
     include:
       - refs/heads/main
-      - refs/heads/master
-      - refs/tags/v*
+      - refs/tags/*
 
 steps:
   - name: publish
@@ -49,11 +48,61 @@ steps:
         - latest
       auto_tag: true
 
+  - name: deploy
+    image: ccr.ccs.tencentyun.com/ovlb/alpine:3.19.1
+    depends_on:
+      - publish
+    environment:
+      DEV_HOST:
+        from_secret: DEV_HOST
+      DEV_DEPLOY_PATH:
+        from_secret: DEV_DEPLOY_PATH
+      DEV_SSH_USER:
+        from_secret: DEV_SSH_USER
+      DEV_SSH_KEY:
+        from_secret: DEV_SSH_KEY
+      HARBOR_USERNAME:
+        from_secret: HARBOR_USERNAME
+      HARBOR_PASSWORD:
+        from_secret: HARBOR_PASSWORD
+    when:
+      branch:
+        - main
+      event:
+        - push
+    commands:
+      - apk add --no-cache openssh-client
+      - |
+        TARGET_HOST="${DEV_HOST:-}"
+        TARGET_USER="${DEV_SSH_USER:-}"
+        TARGET_KEY="${DEV_SSH_KEY:-}"
+        TARGET_PATH="${DEV_DEPLOY_PATH:-/data/docker/lumimax}"
+
+        if [ -z "${TARGET_HOST}" ] || [ -z "${TARGET_USER}" ] || [ -z "${TARGET_KEY}" ]; then
+          echo "skip dev deploy: target not configured"
+          exit 0
+        fi
+
+        mkdir -p ~/.ssh
+        printf '%s\n' "${TARGET_KEY}" > ~/.ssh/id_ed25519
+        chmod 600 ~/.ssh/id_ed25519
+
+        ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no "${TARGET_USER}@${TARGET_HOST}" '
+          DEPLOY_PATH="'"${TARGET_PATH}"'" &&
+          cd "$DEPLOY_PATH" &&
+          echo "LUMIMAX_IMAGE=hub.vlb.cn/work/lumimax:latest" > .image.env &&
+          docker login hub.vlb.cn -u "'"$HARBOR_USERNAME"'" -p "'"$HARBOR_PASSWORD"'" &&
+          docker compose -f compose.stack.yml --env-file .env --env-file .image.env pull lumimax &&
+          docker compose -f compose.stack.yml --env-file .env --env-file .image.env up -d &&
+          docker image prune -f
+        '
+
   - name: notify-feishu-success
     image: ccr.ccs.tencentyun.com/ovlb/plugins.webhook
     failure: ignore
     depends_on:
       - publish
+      - deploy
     settings:
       urls:
         from_secret: FEISHU_WEBHOOK
@@ -74,6 +123,7 @@ steps:
     failure: ignore
     depends_on:
       - publish
+      - deploy
     settings:
       urls:
         from_secret: FEISHU_WEBHOOK

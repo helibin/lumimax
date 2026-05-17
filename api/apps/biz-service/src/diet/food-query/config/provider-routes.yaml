@@ -1,0 +1,63 @@
+# Provider 路由配置版本；用于和代码里的默认解析逻辑对齐
+version: v4
+
+# routes 按 market 分组：
+# - cn: 中国部署
+# - us: 美国/海外部署
+# 每个 food type 下的 provider 按顺序执行，前一项命中后通常不会继续向下查。
+routes:
+  cn:
+    # 默认中文链路：先视觉识别，再查内部库、薄荷健康，最后 LLM 估算兜底
+    default:
+      - vision
+      - internal
+      - boohee
+      - llm_estimate
+    # 原材料场景：优先查食材库与薄荷
+    ingredient:
+      - vision
+      - internal
+      - boohee
+      - llm_estimate
+    # 成品菜场景：当前 CN 仍沿用 internal -> boohee -> llm
+    prepared_dish:
+      - vision
+      - internal
+      - boohee
+      - llm_estimate
+    # 包装食品：在薄荷之后增加营养成分表 OCR 兜底
+    packaged_food:
+      - vision
+      - internal
+      - boohee
+      - nutrition_label_ocr
+      - llm_estimate
+  us:
+    # 默认海外链路：内部库之后优先 USDA，再用 Edamam 补文本/配方能力
+    default:
+      - vision
+      - internal
+      - usda
+      - edamam
+      - llm_estimate
+    # 原材料：USDA 作为基础营养权威库优先
+    ingredient:
+      - vision
+      - internal
+      - usda
+      - edamam
+      - llm_estimate
+    # 成品菜：Edamam 更适合复合食物/菜品解析，所以排在 USDA 前面
+    prepared_dish:
+      - vision
+      - internal
+      - edamam
+      - usda
+      - llm_estimate
+    # 包装食品：先尝试营养成分表 OCR，失败后再回退 Edamam / LLM
+    packaged_food:
+      - vision
+      - nutrition_label_ocr
+      - internal
+      - edamam
+      - llm_estimate

@@ -62,7 +62,7 @@ function createOssClient(
     readEnvFirst('STORAGE_ACCESS_KEY_SECRET') ?? cloudCredentials?.secretAccessKey;
   if (!accessKeyId || !accessKeySecret) {
     throw new Error(
-      'STORAGE_ACCESS_KEY_ID/STORAGE_ACCESS_KEY_SECRET or CLOUD_ACCESS_KEY_ID/CLOUD_ACCESS_KEY_SECRET are required for OSS signed URLs',
+      'STORAGE_ACCESS_KEY_ID/STORAGE_ACCESS_KEY_SECRET are required for OSS signed URLs',
     );
   }
   const OSS = loadOssConstructor();
@@ -72,7 +72,7 @@ function createOssClient(
     bucket: bucket?.trim() || getEnvString('STORAGE_BUCKET') || '',
     accessKeyId,
     accessKeySecret,
-    stsToken: readEnvFirst('STORAGE_STS_TOKEN', 'CLOUD_STS_TOKEN') || undefined,
+    stsToken: readEnvFirst('STORAGE_STS_TOKEN') || undefined,
     endpoint: endpoint || undefined,
     secure: resolveSecure(endpoint),
   });

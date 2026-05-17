@@ -1,7 +1,7 @@
 # RabbitMQ 消息规范（MVP）
 
-> 目标：给 `api/packages/messaging/` 提供统一 exchange / queue / routing key / payload 约定。  
-> 范围：阶段一 MVP，仅覆盖 IoT bridge -> biz-service 主链路与少量重试队列。
+> 目标：给 `api/packages/messaging/` 提供统一 exchange / queue / routing key / payload 约定。
+> 范围：阶段一 MVP，覆盖 iot-service bridge 队列、biz-service 领域队列与少量重试队列。
 
 ---
 
@@ -9,16 +9,31 @@
 
 - 业务事件统一走 RabbitMQ，不让 biz-service 直接耦合 MQTT 报文。
 - exchange 与 routing key 语义稳定，payload 可演进（向后兼容）。
-- 先简单可用：topic exchange + 少量队列 + DLQ。
+- 单一 topic exchange `lumimax.bus`；**当前**主消费队列：`lumimax.q.iot.stream`（**iot-service**，`iot.down.#`）与 `lumimax.q.biz.events`（**biz-service**，`biz.iot.message.received`），统一死信队列为 `lumimax.q.dead`。详见 [`docs/IoT通讯模块规范.md`](../../docs/IoT通讯模块规范.md) §4。
 
 ---
 
 ## 2. Exchange 命名
 
+推荐共用同一个 RabbitMQ 实例与默认 `vhost`（`/`）：
+
 ```text
-lumimax.iot.events          # IoT bridge 发布业务事件
-lumimax.diet.events         # diet 业务内部事件
-lumimax.retry.events        # 统一重试入口（可选）
+/             # 业务总线与 IoT 链路共享命名空间
+```
+
+其中：
+
+```text
+lumimax.bus                     # 默认 vhost 内：IoT bridge + biz 事件共用 topic exchange
+```
+
+业务与 IoT 通过 **不同队列** 与 **路由键** 隔离（IoT 使用 `iot.down.*`；业务事件使用 `biz.*`，由拓扑绑定到 `lumimax.q.biz.events`）。EMQX 开源版主链路的**上行入口不经 RabbitMQ**，而是由 `iot-service` MQTT 共享订阅后再发布到本 exchange。
+
+其它（可选、未在默认拓扑中创建）：
+
+```text
+diet.event                  # diet 业务内部事件
+retry.event                 # 统一重试入口（可选）
 ```
 
 类型：`topic`。
@@ -56,25 +71,30 @@ diet.food.user_common.updated.v1
 消费队列：
 
 ```text
-q.biz.diet.meal.create
-q.biz.diet.food.analyze
-q.biz.diet.food.confirm
-q.biz.diet.meal.finish
+lumimax.q.biz.events        # biz-service（biz.iot.message.received 等 biz.#）
+lumimax.q.iot.stream        # iot-service（iot.down.#）
+lumimax.q.dead              # 统一死信队列
+diet.meal.create.queue
+diet.food.analyze.queue
+diet.food.confirm.queue
+diet.meal.finish.queue
 ```
+
+当前 `dead.#` 统一绑定到 `lumimax.q.dead`。运行时 `assertQueue` 与可选的 `pnpm mq:setup` 声明的队列参数需保持一致，否则会出现 `406 PRECONDITION_FAILED`。
 
 死信队列：
 
 ```text
-q.biz.diet.meal.create.dlq
-q.biz.diet.food.analyze.dlq
-q.biz.diet.food.confirm.dlq
-q.biz.diet.meal.finish.dlq
+diet.meal.create.queue.dlq
+diet.food.analyze.queue.dlq
+diet.food.confirm.queue.dlq
+diet.meal.finish.queue.dlq
 ```
 
 重试队列（可选）：
 
 ```text
-q.retry.diet.food.analyze
+diet.food.analyze.retry.queue
 ```
 
 ---
@@ -110,6 +130,7 @@ q.retry.diet.food.analyze
 - 消费失败重试：最多 3 次，指数退避（1s/5s/30s）。
 - 超过重试进入对应 DLQ。
 - DLQ 必须带最后错误原因与 stack 摘要（避免吞错）。
+- `iot-service` 写入 RabbitMQ 时必须开启 publisher confirm。
 
 ---
 
@@ -117,7 +138,7 @@ q.retry.diet.food.analyze
 
 - 南向：EMQ X / MQTT / `meta.event` 报文。
 - 北向：RabbitMQ envelope（本文件）。
-- IoT bridge 负责协议翻译、字段校验与路由键映射。
+- IoT bridge 负责协议翻译、字段校验、幂等去重与路由键映射。
 
 ---
 
@@ -130,4 +151,3 @@ q.retry.diet.food.analyze
   - `nutrition.analysis.request`
 - biz-service 对应消费者均可收到并处理。
 - 失败消息可进入对应 DLQ。
-

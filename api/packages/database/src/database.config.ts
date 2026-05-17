@@ -9,6 +9,7 @@
 import type { EntityClassOrSchema } from '@nestjs/typeorm/dist/interfaces/entity-class-or-schema.type';
 import { getEnvString } from '@lumimax/config';
 import type { MigrationInterface } from 'typeorm';
+import { normalizeLocalhostConnectionUrl } from './normalize-db-url';
 
 type MigrationEntry = string | (new () => MigrationInterface);
 
@@ -31,7 +32,7 @@ export function resolveDatabaseConfig(
 ): DatabaseRuntimeConfig {
   const serviceName =
     options.serviceName?.trim() || getEnvString('SERVICE_NAME')?.trim() || 'app';
-  const url = (getEnvString('DB_URL') ?? '').trim();
+  const url = normalizeLocalhostConnectionUrl(getEnvString('DB_URL')) ?? '';
   if (!url) {
     throw new Error(`[${serviceName}] DB_URL is required`);
   }

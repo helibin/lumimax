@@ -22,10 +22,54 @@ export namespace AuthApi {
     };
   }
 
+  export interface RabbitmqProfileStatus {
+    exchange: {
+      name: string;
+      ready: boolean;
+    };
+    extraExchanges: Array<{
+      name: string;
+      ready: boolean;
+    }>;
+    name: string;
+    queues: Array<{
+      name: string;
+      ready: boolean;
+    }>;
+    ready: boolean;
+    vhost: string;
+    warnings: string[];
+  }
+
+  export interface RabbitmqStatusResult {
+    managementUrl: string;
+    profiles: RabbitmqProfileStatus[];
+    ready: boolean;
+    warnings: string[];
+  }
+
+  export interface EmqxBootstrapCertFile {
+    exists: boolean;
+    name: string;
+    path: string;
+  }
+
+  export interface EmqxBootstrapCertStatus {
+    certDir: string;
+    files: EmqxBootstrapCertFile[];
+    ready: boolean;
+    warnings: string[];
+    writable: boolean;
+  }
+
   export interface InitStatusResult {
+    certs: EmqxBootstrapCertStatus;
+    certsReady: boolean;
     databaseReady: boolean;
     initialized: boolean;
     initializedAt: null | string;
+    rabbitmq: RabbitmqStatusResult;
+    rabbitmqReady: boolean;
     seedMode: string;
     usageMode: string;
     warnings: string[];
@@ -37,6 +81,7 @@ export namespace AuthApi {
     password: string;
     usageMode?: string;
     username: string;
+    generateBootstrapCerts?: boolean;
   }
 }
 
@@ -105,13 +150,39 @@ export async function getInitStatusApi() {
 }
 
 export async function initializeSystemApi(data: AuthApi.InitializeParams) {
-  const result = await requestClient.post<{ initialized: boolean; usageMode: string; username: string }>(
+  const result = await requestClient.post<{
+    certs: AuthApi.EmqxBootstrapCertStatus;
+    certsReady: boolean;
+    initialized: boolean;
+    usageMode: string;
+    username: string;
+  }>(
     '/admin/system/setup',
     {
       ...data,
       password: CryptoJS.MD5(data.password).toString(),
     },
   );
+  clearInitStatusCache();
+  return result;
+}
+
+export async function setupEmqxCertsApi() {
+  const result = await requestClient.post<{
+    certs: AuthApi.EmqxBootstrapCertStatus;
+    certsReady: boolean;
+    warnings: string[];
+  }>('/admin/system/emqx-certs/setup');
+  clearInitStatusCache();
+  return result;
+}
+
+export async function setupRabbitmqApi() {
+  const result = await requestClient.post<{
+    rabbitmq: AuthApi.RabbitmqStatusResult;
+    rabbitmqReady: boolean;
+    warnings: string[];
+  }>('/admin/system/rabbitmq/setup');
   clearInitStatusCache();
   return result;
 }

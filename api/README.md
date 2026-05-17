@@ -10,7 +10,9 @@ pnpm infra:up
 pnpm dev
 ```
 
-`pnpm dev` 默认启动重构后的核心三服务：`gateway`、`base-service`、`biz-service`。
+`pnpm dev` 默认启动 `gateway`、`base-service`、`biz-service`、`iot-service`（本地开发）；**目标运行时**为四服务（含 **`iot-service`** 传输层，见 [`docs/项目架构总览与开发约束.md`](../docs/项目架构总览与开发约束.md)）。生产默认 **单镜像 + Compose 多进程**（[`docker/README.md`](../docker/README.md)），上 K8s 可拆 Deployment，无需改 RabbitMQ 契约。
+
+单独启动 IoT：`pnpm dev:iot`（或 `pnpm --filter @lumimax/iot-service dev`）。环境变量模板见 `configs/iot-service.env.example`（详见 [`docs/IoT通讯模块规范.md`](../docs/IoT通讯模块规范.md) §10）。
 如需无 watch 运行，使用 `pnpm dev:no-watch`。`pnpm dev:full` / `pnpm dev:full:no-watch` 当前仅表示对仓库保留工作区执行完整启动，不再包含已删除旧服务。
 启动前会先自动编译当前平台依赖的 `packages/*` 与 `internal/*` 共享包，避免共享层 `dist` 过期导致运行时注入异常。
 
@@ -19,6 +21,7 @@ pnpm dev
 ```env
 JWT_SECRET=change-me-in-dev
 RABBITMQ_URL=amqp://root:rd@localhost:5672
+# IOT_RABBITMQ_URL=amqp://root:rd@localhost:5672
 REDIS_URL=redis://localhost:6379
 DB_URL=postgresql://postgres:rd@localhost:5432/lumimax
 ```
@@ -89,16 +92,20 @@ Gateway 提供统一文档聚合入口：
 ## 基础设施配置
 
 - `RABBITMQ_URL`：异步事件总线连接串
-- `RABBITMQ_EVENTS_EXCHANGE`：业务事件交换机（默认 `app.events`）
+- `RABBITMQ_EVENTS_EXCHANGE`：业务 + IoT 共用的 topic 交换机（默认 `lumimax.bus`）
 - `RABBITMQ_EVENTS_EXCHANGE_TYPE`：交换机类型（默认 `topic`）
+- `RABBITMQ_QUEUE`：业务事件队列（默认 `lumimax.q.biz.events`）
+- `RABBITMQ_DLX_QUEUE`：统一死信队列（默认 **`lumimax.q.dead`**；须与业务 / IoT 主队列名不同；`dead.#` 统一绑定到该队列）
+- `IOT_RABBITMQ_URL`：IoT bridge / EMQX 桥接链路专用 RabbitMQ 连接串；未配置时会回退复用 `RABBITMQ_URL`
+- `IOT_RABBITMQ_QUEUE`：iot-service 消费的上下行共用队列（默认 `lumimax.q.iot.stream`，绑定 `iot.up.#` / `iot.down.#`）
+- `IOT_RABBITMQ_MESSAGE_TTL_MS`：IoT 主队列 TTL（毫秒，默认不声明 TTL；如需启用，必须先确保 RabbitMQ 现有队列参数一致）
 - `RABBITMQ_IDEMPOTENCY_TTL_MS`：消费幂等窗口（毫秒，默认 `86400000`）
 - `BASE_SERVICE_GRPC_ENDPOINT / BIZ_SERVICE_GRPC_ENDPOINT`：gateway 调用内部核心服务的 gRPC 地址
-- `IOT_VENDOR`：biz-service IoT 接入主线，支持 `emqx` / `aws` / `aliyun`，默认推荐 `emqx`
-- `IOT_RECEIVE_MODE`：biz-service IoT 接收模式，默认 `queue`；`queue` 表示启用队列消费，`callback` 表示通过 gateway webhook/internal ingest 接收云回调
-- `IOT_QUEUE_*`：biz-service 队列消费配置（URL 与轮询参数）
-- `IOT_ENDPOINT / IOT_POLICY_NAME / IOT_INSTANCE_ID`：biz-service IoT 统一配置入口
-- `IOT_ROOT_CA_PEM / IOT_ROOT_CA_KEY_PEM`：EMQX mTLS 客户端证书签发所需 CA 材料；未配置时会回退为自签客户端证书
-- `IOT_MQTT_USERNAME / IOT_MQTT_PASSWORD / IOT_MQTT_CLIENT_CERT_PEM / IOT_MQTT_CLIENT_KEY_PEM`：biz-service 下行发布到 EMQX 的 MQTT 凭据
+- `IOT_VENDOR` / `IOT_RECEIVE_MODE`：iot-service 与 biz-service 均需一致；`emqx` + `mq` 为默认主线
+- `AWS_SQS_*`、`EMQX_HTTP_*`、`EMQX_MQTT_*`：**仅 iot-service**（传输与下行发布）；详见 `configs/iot-service.env.example`
+- `AWS_IOT_ENDPOINT / AWS_IOT_POLICY_NAME`：设备证书签发（biz-service `device/identity`）与 AWS ingress（iot-service）按需配置
+- `EMQX_BROKER_URL / EMQX_REGION / EMQX_ROOT_CA_*`：biz 签发设备 mTLS；iot 连接 broker / HTTP API
+- `EMQX_AUTH_SECRET`：**gateway** 校验 EMQX webhook / internal auth；与 iot-service 配置一致
 - `HOST / HTTP_PORT / GRPC_PORT`：各服务本地监听配置（按服务类型分别使用）
 - `REDIS_URL`：全局 Redis 连接串（gateway 限流、system 字典缓存、storage 上传令牌等统一复用）
 - `DB_URL`：各服务统一使用的 PostgreSQL 连接串
@@ -111,6 +118,26 @@ Gateway 提供统一文档聚合入口：
 - `GATEWAY_DOCS_FETCH_TIMEOUT_MS`：gateway 拉取 `/docs-json` 超时（毫秒，默认 `6000`）
 - `GATEWAY_GRPC_TIMEOUT_MS`：gateway 调用内部 gRPC 服务统一超时（毫秒，默认 `5000`）
 - `DB_URL`：PostgreSQL 配置
+
+RabbitMQ 共用建议：
+
+推荐最小配置：
+
+```env
+RABBITMQ_URL=amqp://root:rd@localhost:5672
+RABBITMQ_EVENTS_EXCHANGE=lumimax.bus
+RABBITMQ_QUEUE=lumimax.q.biz.events
+RABBITMQ_DLX_QUEUE=lumimax.q.dead
+IOT_RABBITMQ_QUEUE=lumimax.q.iot.stream
+```
+
+约定：
+
+- 默认共用一个 RabbitMQ 实例与默认 `vhost`（`/`）及同一个 topic 交换机 `lumimax.bus`
+- IoT 接入链路默认复用 `RABBITMQ_URL`；只有需要单独连接时才额外设置 `IOT_RABBITMQ_URL`（须与 `RABBITMQ_URL` 落在同一 vhost，否则启动配置校验会报错）
+- **队列分工**：`lumimax.q.iot.stream` 由 **iot-service** 消费 `iot.up.#` / `iot.down.#`；`lumimax.q.biz.events` 由 **biz-service** 消费 `biz.iot.message.received`；`lumimax.q.dead` 统一承接 `dead.#`
+- **iot-service** 启动时 `ensureIotDeadLetterTopology()` 声明 exchange / 队列 / 死信；biz 不再重复 assert bridge 拓扑
+- `pnpm mq:setup` 为可选的管理 API 预创建 / topology 检查入口
 
 ## Storage 路径规范
 
@@ -135,7 +162,9 @@ Gateway 提供统一文档聚合入口：
 
 ## RabbitMQ 事件规范
 
-- Exchange: `app.events`
+- Shared vhost: `/`
+- Exchange: `lumimax.bus`（topic，业务与 IoT 共用）
+- Queues: **`lumimax.q.biz.events`**（biz 领域）、**`lumimax.q.iot.stream`**（iot bridge 上下行）、**`lumimax.q.dead`**（统一死信）
 - Type: `topic`
 - Routing Keys:
   - `audit.admin.action`
@@ -151,10 +180,11 @@ Gateway 提供统一文档聚合入口：
 
 说明：
 
-- `biz-service` 统一处理 IoT 云消息、设备事件与饮食识别主链路。
-- 为兼容现有消费者，事件名仍保留 `device.telemetry.reported` / `device.status.changed`。
-- 当设备通过 MQTT 请求上传凭证时，IoT 消息会在 `biz-service` 内转发到 `base-service` 的存储能力。
-- IoT 主线推荐 `Device -> EMQX -> webhook/bridge -> biz-service`，业务总线仍保留 RabbitMQ。
+- **iot-service** 处理 broker ingress、bridge 队列与 EMQX/AWS 下行发布。
+- **biz-service**（`src/iot`）消费 `biz.iot.message.received`，衔接饮食 / 设备域；下行意图经 `IotDownlinkService` 入队 `iot.down.publish`。
+- 共用 vhost `/` 与交换机 `lumimax.bus`，通过 **独立队列 + 路由键** 隔离。
+- 上传凭证等仍由 biz ingest 转发至 `base-service` storage。
+- 主线：`Device → EMQX → upstream queue → iot-service → biz.iot.message.received → biz-service`；下行：`biz-service → iot.down.publish → downstream queue → iot-service → EMQX HTTP API`。
 
 统一事件结构：
 
@@ -204,6 +234,12 @@ pnpm db:baseline:export
 # 一次性完成 schema + seed
 pnpm db:setup
 
+# 部署初始化：只执行 schema migration，不写入 seed
+pnpm infra:setup
+
+# 需要初始化基础数据的环境：schema migration + seed
+pnpm infra:setup:with-seed
+
 # 清空旧数据后，重新执行 migration + seed
 pnpm db:reinit
 
@@ -230,6 +266,8 @@ pnpm db:seed:create init_demo_data
 - 迁移执行记录保存在 `public.schema_migrations`
 - seed 执行记录保存在 `public.schema_seeds`
 - 如需按数据库目标执行，可传入仓库脚本支持的 `--target=...` 参数；默认主路径以当前 `base-service` / `biz-service` 聚合后的 schema 为准
+- API 启动时 Nest RMQ 会自动 assert exchange、主消费队列与消费者 bindings；`pnpm mq:setup` 保留为可选的 topology 预创建 / 检查工具，适合需要提前创建 dead queue / bindings 或做管理面巡检的环境
+- 部署时推荐在启动 API 服务前执行 `pnpm infra:setup`；需要初始化基础数据的环境才执行 `pnpm infra:setup:with-seed`
 
 本地推荐执行顺序：
 
@@ -276,16 +314,35 @@ limit 20;
 
 ## Gateway 限流
 
-gateway 已接入基于 Redis 的令牌桶限流（Token Bucket）：
+gateway 已接入基于 Redis 的令牌桶限流（Token Bucket）。
 
-- 限流键优先按 `userId`，否则按 `IP`
-- 超限返回 HTTP `429`，并保持统一响应协议（含 `requestId`）
+规则：
+
+- 默认全局生效，挂载在 gateway 全部路由上
+- 默认容量 `60`，默认回填速率 `30/s`
+- 每次请求消耗 `1` 个令牌
+- 限流键优先按登录用户 `userId`，其次按请求头 `x-user-id`，最后按客户端 `IP`
+- 限流键会附带一级路径作用域；当前大多数接口位于 `/api/*` 下，因此通常共享同一组 `api` 配额
+- 默认跳过路径：`/health`、`/api/docs`、`/api/docs-json`、`/api/gateway-docs`、`/favicon.ico`
+
+超限行为：
+
+- 返回 HTTP `429`
+- 保持统一错误响应协议，包含 `requestId`
 - 响应头包含 `x-ratelimit-limit`、`x-ratelimit-remaining` 和可选 `retry-after`
 
-Redis 使用统一连接入口：
+限制说明：
 
-- 统一配置 `REDIS_URL`
-- gateway 限流、system 字典缓存、storage 上传令牌可共用同一 Redis，并通过各自 key prefix / 使用场景隔离
+- 这是网关入口层的粗粒度限流，不是按单个接口单独配额
+- 已登录流量主要按用户维度限制，匿名流量主要按 `IP` 限制
+- Redis 不可用时会自动降级为 `fail-open`，即记录告警并放行请求，不会因为限流组件故障阻断业务
+- 限流 Redis 统一复用 `REDIS_URL`；gateway 限流、system 字典缓存、storage 上传令牌可共用同一 Redis，并通过各自 key prefix / 使用场景隔离
+
+并发与容量说明：
+
+- 默认配置下，单个限流键可持续通过约 `30 请求/秒`，并允许最多约 `60` 个请求的短时突发
+- 这里描述的是 gateway 入口限流阈值，不等同于整套系统经过压测验证的最大并发处理能力
+- 系统实际可承载并发还取决于 gateway 实例数、数据库、Redis、RabbitMQ、下游服务处理耗时以及具体接口类型；如需对外声明“最大并发”，应以专项压测结果为准
 
 ## Swagger 访问方式
 
@@ -356,9 +413,8 @@ Redis 使用统一连接入口：
 
 - Client/Admin -> `gateway`：`POST /admin/devices`
 - `gateway` -> `biz-service`：设备管理 facade
-- `biz-service` -> 云 IoT（AWS IoT Core / 阿里云 IoT）：
+- `biz-service` -> 云 IoT（AWS IoT Core）：
   - AWS: `CreateThing` / `CreateKeysAndCertificate` / `AttachPolicy` / `AttachThingPrincipal`
-  - Aliyun: provider 内部完成设备注册与凭证获取
 - `biz-service` 落库：
   - `devices`
   - `devices_iot`
@@ -385,10 +441,10 @@ Redis 使用统一连接入口：
 说明：
 
 - 客户端不直接调用云厂商 IoT API。
-- 云侧 IoT 适配与业务设备主数据已收敛到 `biz-service`。
+- 云侧 IoT 证书签发在 `iot-service`；设备主数据与编排仍在 `biz-service`（经 `IOT_SERVICE_GRPC_ENDPOINT` 调用）。
 - 设备协议统一为 v1.0（`meta + data` / `v1/{channel}/{deviceId}/{direction}`）。
 - 上行统一转 RabbitMQ， 下行统一通过 `PublishToDevice` -> provider 发布。
-- `IOT_ENDPOINT` 可选；未配置时 AWS provisioning 会通过 `DescribeEndpoint(iot:Data-ATS)` 查询。
+- `AWS_IOT_ENDPOINT` 可选；未配置时 AWS provisioning 会通过 `DescribeEndpoint(iot:Data-ATS)` 查询。
 
 ### IoT Bridge 配置（MVP）
 
@@ -398,47 +454,37 @@ Redis 使用统一连接入口：
 IOT_VENDOR=emqx
 IOT_PROTOCOL_VERSION=1.0
 IOT_V1_UPLINK_TOPICS=v1/connect/+/req,v1/connect/+/status,v1/event/+/req,v1/attr/+/res,v1/cmd/+/res
-IOT_RECEIVE_MODE=queue
-IOT_QUEUE_URL=<queue_url>
-IOT_ENDPOINT=<emqx-host-or-broker-url>
-IOT_ROOT_CA_PEM=<optional_ca_pem>
-IOT_ROOT_CA_KEY_PEM=<optional_ca_key_pem>
-IOT_MQTT_USERNAME=<optional_broker_user>
-IOT_MQTT_PASSWORD=<optional_broker_password>
-IOT_MQTT_CLIENT_CERT_PEM=<optional_publish_cert>
-IOT_MQTT_CLIENT_KEY_PEM=<optional_publish_key>
+IOT_RECEIVE_MODE=mq
+AWS_SQS_QUEUE_URL=<queue_url>
+EMQX_BROKER_URL=<internal-iot-service-broker-url, usually mqtts://emqx:8883>
+EMQX_DEVICE_ENDPOINT=<device-facing-broker-endpoint, usually mqtts://devices.example.com:8883>
+EMQX_ROOT_CA_PEM=<optional_ca_pem>
+EMQX_ROOT_CA_KEY_PEM=<optional_ca_key_pem>
+EMQX_MQTT_USERNAME=lumimax_iot
+EMQX_MQTT_CLIENT_CERT_PEM=<optional_iot_service_client_cert>
+EMQX_MQTT_CLIENT_KEY_PEM=<optional_iot_service_client_key>
 
-# AWS compatibility
-CLOUD_REGION=ap-southeast-1
-IOT_POLICY_NAME=lumimax-device-policy
-IOT_ENDPOINT=<optional>
-CLOUD_ACCESS_KEY_ID=<for provisioning>
-CLOUD_ACCESS_KEY_SECRET=<for provisioning>
+# AWS IoT
+IOT_REGION=ap-southeast-1
+AWS_IOT_POLICY_NAME=lumimax-device-policy
+AWS_IOT_ENDPOINT=<optional>
+IOT_ACCESS_KEY_ID=<for provisioning>
+IOT_ACCESS_KEY_SECRET=<for provisioning>
 
-# Aliyun compatibility
-CLOUD_REGION=cn-shanghai
-IOT_ENDPOINT=<endpoint>
-IOT_INSTANCE_ID=<optional>
-IOT_PRODUCT_KEY_MAP=<optional_json>
-IOT_MNS_ENDPOINT=<optional>
 ```
 
-### IoT Bridge 当前代码结构
+### IoT 当前代码结构（v1.4）
 
-当前 IoT 能力已收敛到 `biz-service`，并保持 Provider Adapter 模式，核心目录如下：
+| 服务 | 路径 | 职责 |
+| --- | --- | --- |
+| `iot-service` | `apps/iot-service/src/` | ingress（EMQX/AWS）、`transport/iot-bridge.*`、upstream/downstream 消费、下行发布 |
+| `biz-service` | `apps/biz-service/src/iot/` | `pipeline/*`（ingest/normalizer/dispatcher）、`transport/iot-biz-events.*`、`transport/iot-downlink.*` |
+| `biz-service` | `apps/biz-service/src/device/` | 设备主数据；证书经 gRPC 委托 `iot-service` |
+| `iot-service` | `apps/iot-service/src/provisioning/` | 设备证书签发（EMQX mTLS / AWS provisioning） |
 
-- `apps/biz-service/src/iot/`
-  - `bridge/*`
-  - `events/*`
-  - `providers/aws/*`
-  - `providers/emqx/*`
-- `topic-parser.service.ts`
-- `iot-ingest.service.ts`
-- `iot-downlink.service.ts`
+规范与 env 分文件说明：[`docs/IoT通讯模块规范.md`](../docs/IoT通讯模块规范.md)。
 
-说明：
-
-- 设备协议仍保持 v1.0，不影响 `gateway` / 设备端调用方式。
+设备协议 v1.0 / v1.3 不变；`gateway` webhook 与 gRPC 入口不变。
 
 ## 统一响应协议
 

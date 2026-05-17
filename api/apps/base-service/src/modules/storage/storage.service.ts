@@ -161,11 +161,11 @@ export class StorageService {
     requestedMode?: 'presigned-url' | 'credentials' | null,
     ownerType?: 'user' | 'device' | 'system',
   ): 'presigned-url' | 'credentials' {
-    if (ownerType === 'device') {
-      return 'presigned-url';
-    }
     if (requestedMode === 'presigned-url' || requestedMode === 'credentials') {
       return requestedMode;
+    }
+    if (ownerType === 'device') {
+      return 'presigned-url';
     }
     return this.supportsCredentialMode(provider) ? 'credentials' : 'presigned-url';
   }
@@ -177,12 +177,12 @@ export class StorageService {
     }
     if (normalized === 'aliyun') {
       return this.aliyunStsService.hasAssumeRoleConfig()
-        || Boolean(readFirstEnv('STORAGE_STS_TOKEN', 'CLOUD_STS_TOKEN'));
+        || Boolean(readFirstEnv('STORAGE_STS_TOKEN'));
     }
     if (normalized === 'minio') {
       return false;
     }
-    return Boolean(readFirstEnv('STORAGE_STS_TOKEN', 'CLOUD_STS_TOKEN'));
+    return Boolean(readFirstEnv('STORAGE_STS_TOKEN'));
   }
 
   private async createTemporaryCredentials(
@@ -218,16 +218,14 @@ export class StorageService {
   } {
     const accessKeyId = readFirstEnv(
       'STORAGE_ACCESS_KEY_ID',
-      'CLOUD_ACCESS_KEY_ID',
     );
     const secretAccessKey = readFirstEnv(
       'STORAGE_ACCESS_KEY_SECRET',
-      'CLOUD_ACCESS_KEY_SECRET',
     );
-    const sessionToken = readFirstEnv('STORAGE_STS_TOKEN', 'CLOUD_STS_TOKEN');
+    const sessionToken = readFirstEnv('STORAGE_STS_TOKEN');
     if (!accessKeyId || !secretAccessKey || !sessionToken) {
       throw new Error(
-        '阿里云 OSS 临时凭证模式需要配置 STORAGE_ACCESS_KEY_ID/STORAGE_ACCESS_KEY_SECRET/STORAGE_STS_TOKEN，或对应的 CLOUD_* 环境变量，或者配置 STORAGE_STS_ROLE_ARN 使用 AssumeRole',
+        '阿里云 OSS 临时凭证模式需要配置 STORAGE_ACCESS_KEY_ID/STORAGE_ACCESS_KEY_SECRET/STORAGE_STS_TOKEN，或者配置 STORAGE_STS_ROLE_ARN 使用 AssumeRole',
       );
     }
     const expiresAt =

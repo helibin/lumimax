@@ -6,7 +6,16 @@ import type {
   FoodVisionResult,
   IdentifyFoodInput,
 } from '../../interfaces/provider.contracts';
+import {
+  normalizeNutritionLabelVisionResult,
+  NUTRITION_LABEL_VISION_PROMPT,
+  parseJsonObject,
+} from './nutrition-label-vision.util';
 import { resolveVisionImage } from './vision-image';
+import {
+  buildVisionIdentifyUserPrompt,
+  VISION_IDENTIFY_SYSTEM_PROMPT,
+} from './vision-llm-prompt.util';
 
 @Injectable()
 export class QwenVisionProvider implements FoodVisionProvider {
@@ -39,17 +48,14 @@ export class QwenVisionProvider implements FoodVisionProvider {
         messages: [
           {
             role: 'system',
-            content:
-              'Identify visible foods and return JSON as {"items":[{"name":"","displayName":"","type":"ingredient","confidence":0.0,"count":1,"estimatedWeightGram":0,"children":[]}]}.',
+            content: VISION_IDENTIFY_SYSTEM_PROMPT,
           },
           {
             role: 'user',
             content: [
               {
                 type: 'text',
-                text:
-                  input.prompt
-                  ?? `Identify visible foods from this image. Return JSON only. locale=${input.locale ?? 'unknown'}; country=${input.countryCode ?? 'unknown'}.`,
+                text: buildVisionIdentifyUserPrompt(input),
               },
               {
                 type: 'image_url',
@@ -64,8 +70,9 @@ export class QwenVisionProvider implements FoodVisionProvider {
     });
 
     const rawContent = response.choices?.[0]?.message?.content ?? '{}';
-    const parsed = parseObject(rawContent);
+    const parsed = parseJsonObject(rawContent);
     return {
+      imageType: normalizeImageType(parsed.imageType),
       items: Array.isArray(parsed.items)
         ? parsed.items
           .map((item) => normalizeVisionItem(item))
@@ -73,6 +80,58 @@ export class QwenVisionProvider implements FoodVisionProvider {
         : [],
       raw: parsed,
     };
+  }
+
+  async parseNutritionLabel(input: IdentifyFoodInput) {
+    const apiKey = getEnvString('LLM_VISION_AK', '')!;
+    if (!apiKey) {
+      throw new Error('Qwen 营养成分表识别需要配置 LLM_VISION_AK');
+    }
+
+    const model = getEnvString('LLM_VISION_MODEL', 'qwen-vl-max-latest')!;
+    validateQwenVisionModel(model);
+    const baseUrl = resolveQwenVisionBaseUrl();
+    const timeoutMs = getEnvNumber('LLM_VISION_TIMEOUT_MS', 15000);
+    const image = await resolveVisionImage(this.httpClient, input, timeoutMs);
+
+    const response = await this.httpClient.postJson<QwenChatCompletionResponse>({
+      url: `${baseUrl}/chat/completions`,
+      timeoutMs,
+      requestId: input.requestId,
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: {
+        model,
+        response_format: { type: 'json_object' },
+        messages: [
+          {
+            role: 'system',
+            content: NUTRITION_LABEL_VISION_PROMPT,
+          },
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text:
+                  input.prompt
+                  ?? `locale=${input.locale ?? 'unknown'}; country=${input.countryCode ?? 'unknown'}`,
+              },
+              {
+                type: 'image_url',
+                image_url: {
+                  url: image.dataUrl,
+                },
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    const rawContent = response.choices?.[0]?.message?.content ?? '{}';
+    return normalizeNutritionLabelVisionResult(parseJsonObject(rawContent));
   }
 }
 
@@ -103,17 +162,6 @@ function validateQwenVisionModel(model: string): void {
   throw new Error(
     `当前 LLM_VISION_MODEL=${model} 不是视觉模型。Qwen 视觉链路请使用 VLM，例如 Qwen-VL / Qwen2-VL / Qwen3-VL / Qwen3-Omni 系列模型。`,
   );
-}
-
-function parseObject(value: string): Record<string, unknown> {
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : {};
-  } catch {
-    return {};
-  }
 }
 
 function normalizeVisionItem(value: unknown): FoodVisionResult['items'][number] | null {
@@ -172,6 +220,25 @@ function normalizeFoodType(value: unknown): FoodVisionResult['items'][number]['t
     case 'packaged_food':
     case 'restaurant_food':
     case 'mixed_meal':
+    case 'unknown':
+      return normalized;
+    default:
+      return undefined;
+  }
+}
+
+function normalizeImageType(value: unknown): FoodVisionResult['imageType'] | undefined {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+  const normalized = value.trim();
+  switch (normalized) {
+    case 'food_photo':
+    case 'packaged_food_front':
+    case 'nutrition_label':
+    case 'barcode_or_qr':
+    case 'menu_or_receipt':
+    case 'mixed':
     case 'unknown':
       return normalized;
     default:

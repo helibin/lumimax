@@ -52,7 +52,7 @@ const routes: RouteRecordRaw[] = [
         path: '/system/audit-logs',
         name: 'SystemAuditLog',
         meta: {
-          icon: 'carbon:document-audit',
+          icon: 'carbon:document-view',
           title: $t('system.audit.title'),
         },
         component: () => import('#/views/system/audit-log/list.vue'),

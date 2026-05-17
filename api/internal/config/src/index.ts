@@ -10,6 +10,8 @@ export * from './env.service';
 export * from './gateway.config';
 export * from './infrastructure.config';
 export * from './iot-vendor.util';
+export * from './iot-receive-mode.util';
 export * from './load-env';
+export * from './rabbitmq-topology.config';
 export * from './runtime-env';
 export * from './validate-env';

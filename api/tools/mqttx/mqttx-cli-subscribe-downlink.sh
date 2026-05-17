@@ -4,12 +4,16 @@ set -euo pipefail
 MQTT_HOST="${MQTT_HOST:-localhost}"
 MQTT_PORT="${MQTT_PORT:-1883}"
 MQTT_PROTOCOL="${MQTT_PROTOCOL:-mqtt}"
+MQTT_USERNAME="${MQTT_USERNAME:-}"
+MQTT_PASSWORD="${MQTT_PASSWORD:-}"
 MQTT_CA="${MQTT_CA:-}"
 MQTT_CERT="${MQTT_CERT:-}"
 MQTT_KEY="${MQTT_KEY:-}"
 DEVICE_ID="${DEVICE_ID:-SN_12345}"
 
 MQTT_BASE_OPTS=(-h "${MQTT_HOST}" -p "${MQTT_PORT}")
+[[ -n "${MQTT_USERNAME}" ]] && MQTT_BASE_OPTS+=(--username "${MQTT_USERNAME}")
+[[ -n "${MQTT_PASSWORD}" ]] && MQTT_BASE_OPTS+=(--password "${MQTT_PASSWORD}")
 if [[ "${MQTT_PROTOCOL}" == "mqtts" ]]; then
   MQTT_BASE_OPTS+=(--protocol mqtts)
   [[ -n "${MQTT_CA}" ]] && MQTT_BASE_OPTS+=(--ca "${MQTT_CA}")
@@ -18,4 +22,3 @@ if [[ "${MQTT_PROTOCOL}" == "mqtts" ]]; then
 fi
 
 mqttx sub "${MQTT_BASE_OPTS[@]}" -t "v1/+/${DEVICE_ID}/res" -v
-

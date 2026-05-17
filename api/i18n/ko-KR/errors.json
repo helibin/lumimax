@@ -12,6 +12,13 @@
   "resource.conflict": "리소스 충돌이 발생했습니다. 중복 작업을 확인하세요",
   "request.unprocessable": "요청 의미를 처리할 수 없습니다",
   "request.too_many": "요청이 너무 많습니다. 잠시 후 다시 시도하세요",
+  "iot.topic_invalid": "IoT 토픽 또는 ACL 요청 형식이 올바르지 않습니다",
+  "iot.topic_forbidden": "IoT 토픽 작업이 허용되지 않습니다",
+  "iot.device_not_found": "IoT 디바이스를 찾을 수 없거나 등록되지 않았습니다",
+  "iot.device_connection_disabled": "IoT 디바이스 연결이 비활성화되었습니다",
+  "iot.credential_not_matched": "IoT 디바이스 인증서 또는 자격 증명이 일치하지 않습니다",
+  "iot.credential_inactive": "IoT 디바이스 인증서 또는 자격 증명이 비활성 상태입니다",
+  "iot.emqx_queue_mode_http_ingest_disabled": "EMQX가 mq 모드(IOT_RECEIVE_MODE=mq)입니다. 상행은 RabbitMQ 브리지만 사용하세요. HTTP/gRPC 수집을 쓰려면 callback 모드로 전환하거나 브리지 경로로만 보내세요",
   "upstream.unavailable": "업스트림 서비스가 일시적으로 사용할 수 없습니다",
   "upstream.timeout": "업스트림 서비스 응답 시간이 초과되었습니다",
   "system.internal_error": "시스템이 바쁩니다. 잠시 후 다시 시도하세요"

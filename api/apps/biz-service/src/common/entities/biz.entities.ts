@@ -217,6 +217,12 @@ export class IotMessageEntity extends BaseEntity {
   @Column({ type: 'varchar', length: 32, default: 'received' })
   status!: string;
 
+  @Column({ type: 'varchar', length: 32, nullable: true })
+  provider?: string | null;
+
+  @Column({ type: 'int', name: 'retry_count', default: 0 })
+  retryCount!: number;
+
   @Column({ type: 'jsonb', name: 'payload_json', nullable: true })
   payloadJson?: Record<string, unknown> | null;
 
@@ -395,6 +401,24 @@ export class MealItemEntity extends BaseEntity {
 
   @Column({ type: 'varchar', length: 32, name: 'recognition_status', default: 'success' })
   recognitionStatus!: string;
+
+  @Column({ type: 'varchar', length: 36, name: 'food_id', nullable: true })
+  foodId?: string | null;
+
+  @Column({ type: 'jsonb', name: 'query_snapshot', nullable: true })
+  querySnapshot?: Record<string, unknown> | null;
+
+  @Column({ type: 'jsonb', name: 'recognition_snapshot', nullable: true })
+  recognitionSnapshot?: Record<string, unknown> | null;
+
+  @Column({ type: 'jsonb', name: 'result_snapshot', nullable: true })
+  resultSnapshot?: Record<string, unknown> | null;
+
+  @Column({ type: 'jsonb', name: 'raw_candidates', nullable: true })
+  rawCandidates?: Record<string, unknown>[] | null;
+
+  @Column({ type: 'jsonb', name: 'selected_candidate', nullable: true })
+  selectedCandidate?: Record<string, unknown> | null;
 }
 
 @Entity('foods')

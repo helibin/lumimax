@@ -1,17 +1,18 @@
-import { forwardRef, Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { BadRequestException } from '@nestjs/common';
 import { Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import type { AuthenticatedUser } from '@lumimax/auth';
 import { toUtcIso } from '@lumimax/http-kit';
 import { generateId } from '@lumimax/runtime';
-import { decryptDeviceCredentialSecret, revealDeviceCredentialPayload } from '@lumimax/security';
+import { decryptDeviceCredentialSecret } from '@lumimax/security';
 import { resolveConfiguredIotVendor } from '@lumimax/config';
 import type { Repository } from 'typeorm';
 import {
   DeviceCommandEntity,
   DeviceCredentialEntity,
   DeviceEntity,
+  DeviceRuntimeStatusEntity,
   DeviceShadowEntity,
   DeviceStatusLogEntity,
   IotProvisionRecordEntity,
@@ -22,14 +23,21 @@ import { DeviceBindingService } from '../bindings/device-binding.service';
 import { DeviceCommandService } from '../commands/device-command.service';
 import { OtaService } from '../ota/ota.service';
 import { DeviceTelemetryService } from '../telemetry/device-telemetry.service';
-import { IotDownlinkService } from '../../iot/providers/aws/iot-downlink.service';
+import { DeviceCloudInboundService } from './device-cloud-inbound.service';
 import { BizIotTopicKind } from '../../iot/iot.types';
-import { IotApplicationService } from '../../iot/bridge/iot-application.service';
 import { resolveTenantId } from '../../common/tenant-scope.util';
 import { getDefaultLocale } from '../../config/default-locale';
 import { getDefaultDietMarket } from '../../diet/market/diet-market';
 import { buildDeviceCertificatePackage } from './device-certificate-package.util';
 import { getDefaultAwsIotRootCaPem } from './device-certificate-package.util';
+import type { DeviceIdentityPort } from '../identity/device-identity.port';
+import { DEVICE_IDENTITY_PORT } from '../identity/device-identity.port';
+import type { IotDownlinkPort } from '../../iot/transport/iot-downlink.port';
+import { IOT_DOWNLINK } from '../../iot/transport/iot-downlink.port';
+import {
+  buildDeviceProtocolDebugContext,
+  DeviceProtocolDebugService,
+} from '../../iot/debug/device-protocol-debug.service';
 
 @Injectable()
 export class DeviceApplicationService {
@@ -44,6 +52,8 @@ export class DeviceApplicationService {
     private readonly deviceCredentialRepository: Repository<DeviceCredentialEntity>,
     @InjectRepository(DeviceShadowEntity)
     private readonly deviceShadowRepository: Repository<DeviceShadowEntity>,
+    @InjectRepository(DeviceRuntimeStatusEntity)
+    private readonly deviceRuntimeStatusRepository: Repository<DeviceRuntimeStatusEntity>,
     @InjectRepository(DeviceStatusLogEntity)
     private readonly deviceStatusLogRepository: Repository<DeviceStatusLogEntity>,
     @InjectRepository(IotProvisionRecordEntity)
@@ -58,11 +68,15 @@ export class DeviceApplicationService {
     private readonly deviceCommandService: DeviceCommandService,
     @Inject(DeviceTelemetryService)
     private readonly deviceTelemetryService: DeviceTelemetryService,
+    @Inject(DeviceCloudInboundService)
+    private readonly deviceCloudInboundService: DeviceCloudInboundService,
     @Inject(OtaService) private readonly otaService: OtaService,
-    @Inject(forwardRef(() => IotDownlinkService))
-    private readonly iotDownlinkService: IotDownlinkService,
-    @Inject(forwardRef(() => IotApplicationService))
-    private readonly iotApplicationService: IotApplicationService,
+    @Inject(IOT_DOWNLINK)
+    private readonly iotDownlinkService: IotDownlinkPort,
+    @Inject(DEVICE_IDENTITY_PORT)
+    private readonly deviceIdentityService: DeviceIdentityPort,
+    @Inject(DeviceProtocolDebugService)
+    private readonly deviceProtocolDebugService: DeviceProtocolDebugService,
   ) {}
 
   async execute<T = unknown>(input: {
@@ -114,31 +128,31 @@ export class DeviceApplicationService {
       case 'devices.shadow.patch':
         return this.patchDeviceShadow(String(params.id ?? ''), body, user, tenantId, input.requestId);
       case 'internal.devices.activateFromCloud':
-        return this.activateFromCloud(body, input.requestId);
+        return this.deviceCloudInboundService.activateFromCloud(body, input.requestId);
       case 'internal.devices.markOnlineFromCloud':
-        return this.markOnlineFromCloud(body, input.requestId);
+        return this.deviceCloudInboundService.markOnlineFromCloud(body, input.requestId);
       case 'internal.devices.markOfflineFromCloud':
-        return this.markOfflineFromCloud(body, input.requestId);
+        return this.deviceCloudInboundService.markOfflineFromCloud(body, input.requestId);
       case 'internal.devices.recordHeartbeatTelemetry':
-        return this.recordHeartbeatTelemetry(body, input.requestId);
+        return this.deviceCloudInboundService.recordHeartbeatTelemetry(body, input.requestId);
       case 'internal.devices.applyAttrResult':
-        return this.applyAttrResult(body, input.requestId);
+        return this.deviceCloudInboundService.applyAttrResult(body, input.requestId);
       case 'internal.devices.handleCommandResult':
-        return this.handleCommandResult(body, input.requestId);
+        return this.deviceCloudInboundService.handleCommandResult(body, input.requestId);
       case 'admin.devices.list':
         return this.listDevices(query, tenantId);
       case 'admin.devices.get':
         return this.getDevice(String(params.id ?? ''), tenantId);
       case 'admin.devices.create':
         return this.createDevice(body, tenantId, input.requestId);
-      case 'admin.devices.certificate.get':
-        return this.getAdminDeviceCertificate(String(params.id ?? ''), tenantId);
-      case 'admin.devices.certificate.download':
-        return this.downloadAdminDeviceCertificate(String(params.id ?? ''), tenantId, input.requestId);
-      case 'admin.devices.certificate.claim':
-        return this.claimAdminDeviceCertificate(String(params.id ?? ''), tenantId, input.requestId);
-      case 'admin.devices.certificate.rotate':
-        return this.rotateAdminDeviceCertificate(String(params.id ?? ''), body, tenantId, input.requestId);
+      case 'admin.devices.credential.get':
+        return this.getAdminDeviceCredential(String(params.id ?? ''), tenantId);
+      case 'admin.devices.credential.download':
+        return this.downloadAdminDeviceCredential(String(params.id ?? ''), tenantId, input.requestId);
+      case 'admin.devices.credential.claim':
+        return this.claimAdminDeviceCredential(String(params.id ?? ''), tenantId, input.requestId);
+      case 'admin.devices.credential.rotate':
+        return this.rotateAdminDeviceCredential(String(params.id ?? ''), body, tenantId, input.requestId);
       case 'admin.devices.updateStatus':
         return this.updateDeviceStatus(String(params.id ?? ''), body, tenantId, input.requestId);
       case 'admin.devices.delete':
@@ -161,6 +175,10 @@ export class DeviceApplicationService {
         return this.listOtaTasks(String(params.id ?? ''), tenantId);
       case 'admin.dashboard.overview':
         return this.getAdminDashboardOverview(tenantId);
+      case 'admin.debug.deviceProtocol.uploadUrl':
+        return this.debugDeviceProtocolUploadUrl(body, tenantId, input.requestId);
+      case 'admin.debug.deviceProtocol.foodRecognition':
+        return this.debugDeviceProtocolFoodRecognition(body, tenantId, input.requestId);
       default:
         return undefined;
     }
@@ -178,9 +196,12 @@ export class DeviceApplicationService {
     this.applyDeviceListFilters(qb, query, tenantId, userId);
     qb.orderBy('device.createdAt', 'DESC').skip((page - 1) * pageSize).take(pageSize);
     const [items, total] = await qb.getManyAndCount();
+    const runtimeByDeviceId = await this.loadRuntimeStatusMap(items.map((item) => item.id));
     const totalPages = Math.max(1, Math.ceil(total / pageSize));
     return {
-      items: items.map((item) => this.toDeviceListItem(item)),
+      items: items.map((item) =>
+        this.toDeviceListItem(item, runtimeByDeviceId.get(item.id) ?? null),
+      ),
       pagination: {
         page,
         pageSize,
@@ -210,7 +231,7 @@ export class DeviceApplicationService {
     const userId = requireUserId(user);
     const deviceSn =
       pickString(body.deviceSn) ?? pickString(body.deviceId) ?? `user-${generateId()}`;
-    const { entity, restored } = await this.createOrRestoreDevice({
+    const { entity, state } = await this.createOrUpsertDevice({
       tenantId,
       name: pickString(body.name) ?? deviceSn,
       deviceSn,
@@ -223,14 +244,23 @@ export class DeviceApplicationService {
       market: getDefaultDietMarket(),
       requestId,
     });
+    if (state === 'reused') {
+      if (entity.boundUserId && entity.boundUserId !== userId) {
+        throw new Error(`device already bound: ${entity.id}`);
+      }
+      if (entity.boundUserId !== userId) {
+        entity.boundUserId = userId;
+        await this.deviceRepository.save(entity);
+        await this.deviceBindingService.appendBinding(tenantId, entity.id, userId, requestId);
+      }
+      return this.buildSkippedProvisionResponse(entity, requestId);
+    }
     await this.deviceBindingService.appendBinding(tenantId, entity.id, userId, requestId);
     try {
       return await this.withIotProvision(entity, requestId, 'devices.create');
     } catch (error) {
       await this.deviceBindingService.closeActiveBinding(tenantId, entity.id, userId, requestId);
-      if (restored) {
-        await this.deviceRepository.softDelete(entity.id);
-      } else {
+      if (state === 'created') {
         await this.deviceRepository.delete({ tenantId, id: entity.id });
       }
       throw error;
@@ -555,9 +585,12 @@ export class DeviceApplicationService {
     this.applyDeviceListFilters(qb, query, tenantId);
     qb.orderBy('device.createdAt', 'DESC').skip((page - 1) * pageSize).take(pageSize);
     const [items, total] = await qb.getManyAndCount();
+    const runtimeByDeviceId = await this.loadRuntimeStatusMap(items.map((item) => item.id));
     const totalPages = Math.max(1, Math.ceil(total / pageSize));
     return {
-      items: items.map((item) => this.toDeviceListItem(item)),
+      items: items.map((item) =>
+        this.toDeviceListItem(item, runtimeByDeviceId.get(item.id) ?? null),
+      ),
       pagination: {
         page,
         pageSize,
@@ -573,7 +606,10 @@ export class DeviceApplicationService {
     if (!device) {
       throw new Error(`device not found: ${id}`);
     }
-    return this.toDeviceDetail(device);
+    const runtime = await this.deviceRuntimeStatusRepository.findOne({
+      where: { tenantId, deviceId: device.id },
+    });
+    return this.toDeviceDetail(device, runtime);
   }
 
   private async createDevice(
@@ -585,7 +621,7 @@ export class DeviceApplicationService {
     if (!deviceSn) {
       throw new BadRequestException('deviceSn is required');
     }
-    const { entity, restored } = await this.createOrRestoreDevice({
+    const { entity, state } = await this.createOrUpsertDevice({
       tenantId,
       name: pickString(body.name) ?? deviceSn,
       deviceSn,
@@ -598,63 +634,52 @@ export class DeviceApplicationService {
       market: getDefaultDietMarket(),
       requestId,
     });
+    if (state === 'reused') {
+      return this.buildSkippedProvisionResponse(entity, requestId);
+    }
     try {
       return await this.withIotProvision(entity, requestId, 'admin.devices.create');
     } catch (error) {
-      if (restored) {
-        await this.deviceRepository.softDelete(entity.id);
-      } else {
+      if (state === 'created') {
         await this.deviceRepository.delete({ tenantId, id: entity.id });
       }
       throw error;
     }
   }
 
-  private async getAdminDeviceCertificate(
+  private async getAdminDeviceCredential(
     id: string,
     tenantId: string,
   ): Promise<Record<string, unknown>> {
-    const detail = await this.resolveAdminDeviceCertificateDetail(id, tenantId);
+    const detail = await this.resolveAdminDeviceCredentialDetail(id, tenantId);
     const { privateKeyPem: _privateKeyPem, ...publicDetail } = detail;
     return publicDetail;
   }
 
-  private async downloadAdminDeviceCertificate(
+  private async downloadAdminDeviceCredential(
     id: string,
     tenantId: string,
     requestId: string,
   ): Promise<Record<string, unknown>> {
-    const detail = await this.consumeAdminDeviceCertificateSecret(id, tenantId, 'download', requestId);
+    const detail = await this.consumeAdminDeviceCredentialSecret(id, tenantId, 'download', requestId);
     const certificatePem = detail.certificatePem;
     const privateKeyPem = detail.privateKeyPem;
     if (!certificatePem && !privateKeyPem) {
-      throw new BadRequestException('certificate package is unavailable');
+      throw new BadRequestException('device credential package is unavailable');
     }
     const deviceSn = detail.deviceSn || detail.deviceId || 'device';
-    const archive =
-      detail.vendor === 'aliyun'
-        ? buildDeviceCertificatePackage({
-            deviceSn,
-            thingName: detail.thingName,
-            vendor: detail.vendor,
-            endpoint: detail.endpoint,
-            region: detail.region,
-            productKey: detail.productKey,
-            credentialId: detail.credentialId,
-            deviceSecret: privateKeyPem ?? null,
-          })
-        : buildDeviceCertificatePackage({
-            deviceSn,
-            thingName: detail.thingName,
-            vendor: detail.vendor,
-            endpoint: detail.endpoint,
-            region: detail.region,
-            productKey: detail.productKey,
-            credentialId: detail.credentialId,
-            certificatePem: certificatePem ?? null,
-            privateKeyPem: privateKeyPem ?? null,
-            rootCaPem: detail.rootCaPem ?? null,
-          });
+    const archive = buildDeviceCertificatePackage({
+      deviceSn,
+      thingName: detail.thingName,
+      vendor: detail.vendor,
+      endpoint: detail.endpoint,
+      region: detail.region,
+      productKey: detail.productKey,
+      credentialId: detail.credentialId,
+      certificatePem: certificatePem ?? null,
+      privateKeyPem: privateKeyPem ?? null,
+      rootCaPem: detail.rootCaPem ?? null,
+    });
     return {
       ...archive,
       deviceId: detail.deviceId,
@@ -667,53 +692,40 @@ export class DeviceApplicationService {
     };
   }
 
-  private async claimAdminDeviceCertificate(
+  private async claimAdminDeviceCredential(
     id: string,
     tenantId: string,
     requestId: string,
   ): Promise<Record<string, unknown>> {
-    const detail = await this.consumeAdminDeviceCertificateSecret(id, tenantId, 'copy', requestId);
+    const detail = await this.consumeAdminDeviceCredentialSecret(id, tenantId, 'copy', requestId);
     const clientId = detail.thingName ?? detail.deviceSn ?? detail.deviceId;
     const rootCaPem =
-      detail.vendor === 'aliyun'
-        ? null
-        : detail.vendor === 'emqx'
-          ? detail.rootCaPem ?? null
-          : getDefaultAwsIotRootCaPem();
-    const clipboardText =
-      detail.vendor === 'aliyun'
-        ? [
-            `vendor=${detail.vendor ?? ''}`,
-            `endpoint=${detail.endpoint ?? ''}`,
-            `region=${detail.region ?? ''}`,
-            `productKey=${detail.productKey ?? ''}`,
-            `deviceName=${detail.thingName ?? ''}`,
-            `iotId=${detail.credentialId ?? ''}`,
-            `deviceSecret=${detail.privateKeyPem ?? ''}`,
-          ].join('\n')
-        : [
-            `endpoint=${detail.endpoint ?? ''}`,
-            `clientId=${clientId ?? ''}`,
-            `thingName=${detail.thingName ?? ''}`,
-            `region=${detail.region ?? ''}`,
-            `vendor=${detail.vendor ?? ''}`,
-            'certificatePem=<<EOF',
-            detail.certificatePem ?? '',
-            'EOF',
-            'privateKeyPem=<<EOF',
-            detail.privateKeyPem ?? '',
-            'EOF',
-            'rootCaPem=<<EOF',
-            rootCaPem ?? '',
-            'EOF',
-          ].join('\n');
+      detail.vendor === 'emqx'
+        ? detail.rootCaPem ?? null
+        : getDefaultAwsIotRootCaPem();
+    const clipboardText = [
+      `endpoint=${detail.endpoint ?? ''}`,
+      `clientId=${clientId ?? ''}`,
+      `thingName=${detail.thingName ?? ''}`,
+      `region=${detail.region ?? ''}`,
+      `vendor=${detail.vendor ?? ''}`,
+      'certificatePem=<<EOF',
+      detail.certificatePem ?? '',
+      'EOF',
+      'privateKeyPem=<<EOF',
+      detail.privateKeyPem ?? '',
+      'EOF',
+      'rootCaPem=<<EOF',
+      rootCaPem ?? '',
+      'EOF',
+    ].join('\n');
 
     return {
       ok: true,
       deviceId: detail.deviceId,
       deviceSn: detail.deviceSn,
       endpoint: detail.endpoint,
-      clientId: detail.vendor === 'aliyun' ? null : clientId,
+      clientId,
       thingName: detail.thingName,
       region: detail.region,
       vendor: detail.vendor,
@@ -721,22 +733,22 @@ export class DeviceApplicationService {
       credentialId: detail.credentialId ?? null,
       certificateArn: detail.certificateArn,
       certificatePem: detail.certificatePem,
-      privateKeyPem: detail.vendor === 'aliyun' ? null : detail.privateKeyPem,
-      deviceSecret: detail.vendor === 'aliyun' ? detail.privateKeyPem : null,
+      privateKeyPem: detail.privateKeyPem,
+      deviceSecret: null,
       rootCaPem,
       clipboardText,
       claimedAt: new Date().toISOString(),
     };
   }
 
-  private async rotateAdminDeviceCertificate(
+  private async rotateAdminDeviceCredential(
     id: string,
     body: Record<string, unknown>,
     tenantId: string,
     requestId: string,
   ): Promise<Record<string, unknown>> {
     const device = await this.mustGetDevice(id, tenantId);
-    const result = await this.iotApplicationService.rotateDeviceCertificate({
+    const result = await this.deviceIdentityService.rotateDeviceCredential({
       tenantId,
       deviceId: device.id,
       deviceSn: device.deviceSn,
@@ -750,7 +762,7 @@ export class DeviceApplicationService {
     };
   }
 
-  private async resolveAdminDeviceCertificateDetail(
+  private async resolveAdminDeviceCredentialDetail(
     id: string,
     tenantId: string,
   ): Promise<Record<string, unknown>> {
@@ -761,23 +773,18 @@ export class DeviceApplicationService {
     });
 
     if (credential) {
-      return this.toDeviceCertificateDetail(device, credential);
+      return this.toDeviceCredentialDetail(device, credential);
     }
 
-    const provisionRecord = await this.iotProvisionRecordRepository.findOne({
-      where: { tenantId, deviceId: device.id },
-      order: { createdAt: 'DESC' },
-    });
-
-    return this.toFallbackCertificateDetail(device, provisionRecord);
+    return this.toUnavailableDeviceCredentialDetail(device);
   }
 
-  private async consumeAdminDeviceCertificateSecret(
+  private async consumeAdminDeviceCredentialSecret(
     id: string,
     tenantId: string,
     method: 'copy' | 'download',
     requestId: string,
-  ): Promise<ConsumableCertificateDetail> {
+  ): Promise<ConsumableDeviceCredentialDetail> {
     const device = await this.mustGetDevice(id, tenantId);
     const credential = await this.deviceCredentialRepository.findOne({
       where: { tenantId, deviceId: device.id, credentialType: 'certificate' },
@@ -789,7 +796,7 @@ export class DeviceApplicationService {
       const privateKeyPem = decryptDeviceCredentialSecret(credential.privateKeyPem) ?? null;
       const claimedAt = pickString(asRecord(credential.metadataJson?.retrieval).claimedAt);
       if (claimedAt || (!certificatePem && !privateKeyPem)) {
-        throw new BadRequestException('certificate secret already claimed');
+        throw new BadRequestException('device credential secret already claimed');
       }
       await saveConsumedCredential(this.deviceCredentialRepository, credential, method, requestId);
       return {
@@ -808,46 +815,7 @@ export class DeviceApplicationService {
       };
     }
 
-    const provisionRecord = await this.iotProvisionRecordRepository.findOne({
-      where: { tenantId, deviceId: device.id },
-      order: { createdAt: 'DESC' },
-    });
-    if (!provisionRecord) {
-      throw new BadRequestException('certificate package is unavailable');
-    }
-    const responsePayload =
-      revealDeviceCredentialPayload(asRecord(provisionRecord?.responsePayloadJson)) ?? {};
-    const claimedAt = pickString(asRecord(responsePayload.retrieval).claimedAt);
-    const certificatePem = pickString(responsePayload.certificatePem) ?? null;
-    const privateKeyPem =
-      pickString(responsePayload.privateKey) ?? pickString(responsePayload.privateKeyPem) ?? null;
-    const thingName =
-      pickString(responsePayload.thingName)
-      ?? pickString(responsePayload.providerThingName)
-      ?? null;
-    if (claimedAt || (!certificatePem && !privateKeyPem)) {
-      throw new BadRequestException('certificate secret already claimed');
-    }
-    await saveConsumedProvisionRecord(
-      this.iotProvisionRecordRepository,
-      provisionRecord,
-      method,
-      requestId,
-    );
-    return {
-      certificateArn: pickString(responsePayload.certificateArn) ?? null,
-      certificatePem,
-      deviceId: device.id,
-      deviceSn: device.deviceSn,
-      endpoint: pickString(responsePayload.endpoint) ?? null,
-      privateKeyPem,
-      region: pickString(responsePayload.region) ?? null,
-      rootCaPem: pickString(responsePayload.rootCaPem) ?? null,
-      thingName,
-      vendor: pickString(responsePayload.vendor) ?? device.provider,
-      productKey: pickString(responsePayload.productKey) ?? device.productKey,
-      credentialId: pickString(responsePayload.credentialId) ?? null,
-    };
+    throw new BadRequestException('device credential package is unavailable');
   }
 
   private async updateDeviceStatus(
@@ -875,7 +843,7 @@ export class DeviceApplicationService {
     if (!device) {
       throw new Error(`device not found: ${id}`);
     }
-    const cloudCleanup = await this.iotApplicationService.deleteDeviceIdentity({
+    const cloudCleanup = await this.deviceIdentityService.deleteDeviceIdentity({
       tenantId,
       deviceId: device.id,
       deviceSn: device.deviceSn,
@@ -883,7 +851,15 @@ export class DeviceApplicationService {
       vendor: toVendorName(device.provider),
       requestId,
     });
-    await this.deviceRepository.softDelete(device.id);
+    await this.deviceBindingService.deleteAllBindings(tenantId, device.id);
+    await this.deviceCommandRepository.delete({ tenantId, deviceId: device.id });
+    await this.deviceCredentialRepository.delete({ tenantId, deviceId: device.id });
+    await this.deviceShadowRepository.delete({ tenantId, deviceId: device.id });
+    await this.deviceStatusLogRepository.delete({ tenantId, deviceId: device.id });
+    await this.iotProvisionRecordRepository.delete({ tenantId, deviceId: device.id });
+    await this.mealRecordRepository.delete({ tenantId, deviceId: device.id });
+    await this.recognitionLogRepository.delete({ tenantId, deviceId: device.id });
+    await this.deviceRepository.delete({ tenantId, id: device.id });
     return { ok: true, id: device.id, requestId, cloudCleanup };
   }
 
@@ -945,7 +921,7 @@ export class DeviceApplicationService {
     const saved = await this.deviceRepository.save(device);
     await this.deviceTelemetryService.appendStatusLog(saved, body, requestId);
     const iotProvision = forceReissue
-      ? await this.iotApplicationService.rotateDeviceCertificate({
+      ? await this.deviceIdentityService.rotateDeviceCredential({
         tenantId,
         deviceId: device.id,
         deviceSn: device.deviceSn,
@@ -954,7 +930,7 @@ export class DeviceApplicationService {
         reason: pickString(body.reason) ?? 'admin.devices.provision.force_reissue',
       })
       : !credential || credential.status !== 'active'
-        ? await this.iotApplicationService.provisionOnDeviceCreated({
+        ? await this.deviceIdentityService.provisionOnDeviceCreated({
           deviceId: device.id,
           deviceSn: device.deviceSn,
           provider: device.provider,
@@ -1102,6 +1078,56 @@ export class DeviceApplicationService {
     return device;
   }
 
+  private async debugDeviceProtocolUploadUrl(
+    body: Record<string, unknown>,
+    tenantId: string,
+    requestId: string,
+  ) {
+    const context = await this.resolveDeviceProtocolDebugContext(body, tenantId, requestId);
+    const file = pickString(body.filename);
+    const fileType = pickString(body.fileType) ?? pickString(body.mimeType) ?? 'image/jpeg';
+    return this.deviceProtocolDebugService.requestUploadUrl({
+      context,
+      fileType,
+      ...(file ? { filename: file } : {}),
+    });
+  }
+
+  private async debugDeviceProtocolFoodRecognition(
+    body: Record<string, unknown>,
+    tenantId: string,
+    requestId: string,
+  ) {
+    const context = await this.resolveDeviceProtocolDebugContext(body, tenantId, requestId);
+    const objectKey = pickString(body.objectKey) ?? pickString(body.imageKey);
+    const weightGram = pickNumber(body.weightGram) ?? pickNumber(body.weight);
+    if (!objectKey || !weightGram) {
+      throw new BadRequestException('objectKey and weightGram are required');
+    }
+    return this.deviceProtocolDebugService.runFoodRecognitionChain({
+      context,
+      objectKey,
+      weightGram,
+    });
+  }
+
+  private async resolveDeviceProtocolDebugContext(
+    body: Record<string, unknown>,
+    tenantId: string,
+    requestId: string,
+  ) {
+    const device = await this.findDeviceByProviderIdOrThrow(body, tenantId);
+    const userId = pickString(body.userId) ?? pickString(body.user_id) ?? device.boundUserId ?? undefined;
+    return buildDeviceProtocolDebugContext({
+      deviceSn: device.deviceSn,
+      internalDeviceId: device.id,
+      locale: pickString(body.locale) ?? device.locale ?? getDefaultLocale(),
+      market: pickString(body.market) ?? device.market ?? getDefaultDietMarket(),
+      requestId,
+      userId,
+    });
+  }
+
   private async findDeviceByProviderIdOrThrow(
     body: Record<string, unknown>,
     tenantScope?: string,
@@ -1160,7 +1186,7 @@ export class DeviceApplicationService {
   ): Promise<void> {
     const commandName = normalizeCommandName(command.commandType);
     const requestId = command.id;
-    await this.iotDownlinkService.publish({
+    const delivery = await this.iotDownlinkService.publish({
       vendor: toVendorName(device.provider),
       deviceId: device.deviceSn,
       topicKind: BizIotTopicKind.CMD_RES,
@@ -1181,6 +1207,7 @@ export class DeviceApplicationService {
         },
       },
     });
+    await this.updateCommandDeliveryStatus(command, delivery.delivery);
   }
 
   private async publishOtaUpgradeDownlink(
@@ -1189,7 +1216,7 @@ export class DeviceApplicationService {
   ): Promise<void> {
     const payload = command.payloadJson ?? {};
     const requestId = command.id;
-    await this.iotDownlinkService.publish({
+    const delivery = await this.iotDownlinkService.publish({
       vendor: toVendorName(device.provider),
       deviceId: device.deviceSn,
       topicKind: BizIotTopicKind.CMD_RES,
@@ -1216,6 +1243,7 @@ export class DeviceApplicationService {
         },
       },
     });
+    await this.updateCommandDeliveryStatus(command, delivery.delivery);
   }
 
   private async publishOtaCancelDownlink(
@@ -1223,7 +1251,7 @@ export class DeviceApplicationService {
     command: DeviceCommandEntity,
     requestId: string,
   ): Promise<void> {
-    await this.iotDownlinkService.publish({
+    const delivery = await this.iotDownlinkService.publish({
       vendor: toVendorName(device.provider),
       deviceId: device.deviceSn,
       topicKind: BizIotTopicKind.CMD_RES,
@@ -1243,9 +1271,35 @@ export class DeviceApplicationService {
         },
       },
     });
+    await this.updateCommandDeliveryStatus(command, delivery.delivery);
   }
 
-  private toDeviceListItem(device: DeviceEntity): Record<string, unknown> {
+  private async updateCommandDeliveryStatus(
+    command: DeviceCommandEntity,
+    delivery: 'queued' | 'sent' | 'skipped',
+  ): Promise<void> {
+    if (delivery === 'queued') {
+      command.status = 'accepted';
+      command.failureReason = null;
+      await this.deviceCommandService.markCommandAccepted(command.id);
+      return;
+    }
+    if (delivery === 'sent') {
+      command.status = 'sent';
+      command.sentAt = command.sentAt ?? new Date();
+      command.failureReason = null;
+      await this.deviceCommandService.markCommandSent(command.id);
+      return;
+    }
+    command.status = 'failed';
+    command.failureReason = 'downlink delivery skipped';
+    await this.deviceCommandService.markCommandFailed(command.id, 'downlink delivery skipped');
+  }
+
+  private toDeviceListItem(
+    device: DeviceEntity,
+    runtime?: DeviceRuntimeStatusEntity | null,
+  ): Record<string, unknown> {
     return {
       id: device.id,
       tenantId: device.tenantId,
@@ -1260,25 +1314,40 @@ export class DeviceApplicationService {
       locale: device.locale ?? null,
       market: device.market ?? null,
       countryCode: device.countryCode ?? null,
+      firmwareVersion: runtime?.firmwareVersion ?? null,
+      lastSeenAt: device.lastSeenAt?.toISOString() ?? null,
       createdAt: device.createdAt.toISOString(),
     };
   }
 
-  private toDeviceDetail(device: DeviceEntity): Record<string, unknown> {
+  private toDeviceDetail(
+    device: DeviceEntity,
+    runtime?: DeviceRuntimeStatusEntity | null,
+  ): Record<string, unknown> {
     return {
-      ...this.toDeviceListItem(device),
-      lastSeenAt: device.lastSeenAt?.toISOString() ?? null,
+      ...this.toDeviceListItem(device, runtime),
       updatedAt: toUtcIso(device.updatedAt),
     };
   }
 
-  private toDeviceCertificateDetail(
+  private async loadRuntimeStatusMap(
+    deviceIds: string[],
+  ): Promise<Map<string, DeviceRuntimeStatusEntity>> {
+    if (deviceIds.length === 0) {
+      return new Map();
+    }
+    const runtimes = await this.deviceRuntimeStatusRepository.find({
+      where: deviceIds.map((deviceId) => ({ deviceId })),
+    });
+    return new Map(runtimes.map((runtime) => [runtime.deviceId, runtime]));
+  }
+
+  private toDeviceCredentialDetail(
     device: DeviceEntity,
     credential: DeviceCredentialEntity,
   ): Record<string, unknown> {
     const certificatePem = decryptDeviceCredentialSecret(credential.certificatePem) ?? null;
     const privateKeyPem = decryptDeviceCredentialSecret(credential.privateKeyPem) ?? null;
-    const isAliyun = credential.vendor === 'aliyun';
     const rootCaPem = pickString(asRecord(credential.metadataJson).rootCaPem) ?? null;
     const retrieval = asRecord(credential.metadataJson?.retrieval);
     const claimedAt = pickString(retrieval.claimedAt) ?? null;
@@ -1293,18 +1362,18 @@ export class DeviceApplicationService {
       credentialId: credential.credentialId ?? null,
       thingName: credential.thingName ?? null,
       certificateArn: credential.certificateArn ?? null,
-      certificatePem: isAliyun ? null : certificatePem,
+      certificatePem,
       endpoint: credential.endpoint ?? null,
       region: credential.region ?? null,
       fingerprint: credential.fingerprint ?? null,
       rootCaPem,
       issuedAt: credential.issuedAt?.toISOString() ?? null,
       expiresAt: credential.expiresAt?.toISOString() ?? null,
-      hasPrivateKey: isAliyun ? false : Boolean(privateKeyPem),
-      privateKeyPem: isAliyun ? null : privateKeyPem,
-      hasDeviceSecret: isAliyun ? Boolean(privateKeyPem) : false,
-      downloadAvailable: Boolean(((isAliyun ? privateKeyPem : certificatePem || privateKeyPem)) && !claimedAt),
-      claimAvailable: Boolean(((isAliyun ? privateKeyPem : certificatePem || privateKeyPem)) && !claimedAt),
+      hasPrivateKey: Boolean(privateKeyPem),
+      privateKeyPem,
+      hasDeviceSecret: false,
+      downloadAvailable: Boolean((certificatePem || privateKeyPem) && !claimedAt),
+      claimAvailable: Boolean((certificatePem || privateKeyPem) && !claimedAt),
       claimedAt,
       source: 'device_credentials',
       metadata: credential.metadataJson ?? {},
@@ -1313,59 +1382,35 @@ export class DeviceApplicationService {
     };
   }
 
-  private toFallbackCertificateDetail(
-    device: DeviceEntity,
-    provisionRecord: IotProvisionRecordEntity | null,
-  ): Record<string, unknown> {
-    const responsePayload =
-      revealDeviceCredentialPayload(asRecord(provisionRecord?.responsePayloadJson)) ?? {};
-    const requestPayload = asRecord(provisionRecord?.requestPayloadJson);
-    const certificatePem = pickString(responsePayload.certificatePem);
-    const certificateArn = pickString(responsePayload.certificateArn);
-    const privateKeyPem =
-      pickString(responsePayload.privateKey) ?? pickString(responsePayload.privateKeyPem);
-    const deviceSecret = pickString(responsePayload.deviceSecret);
-    const vendor = pickString(responsePayload.vendor) ?? provisionRecord?.vendor ?? device.provider;
-    const isAliyun = vendor === 'aliyun';
-    const rootCaPem = pickString(responsePayload.rootCaPem) ?? null;
-    const thingName =
-      pickString(responsePayload.thingName)
-      ?? pickString(responsePayload.providerThingName)
-      ?? pickString(requestPayload.desiredThingName);
-    const retrieval = asRecord(responsePayload.retrieval);
-    const claimedAt = pickString(retrieval.claimedAt) ?? null;
-
+  private toUnavailableDeviceCredentialDetail(device: DeviceEntity): Record<string, unknown> {
     return {
       deviceId: device.id,
       deviceSn: device.deviceSn,
       provider: device.provider,
-      available: Boolean(certificatePem || certificateArn || thingName),
-      status: pickString(responsePayload.status) ?? provisionRecord?.status ?? 'unknown',
-      vendor,
+      available: false,
+      status: 'unavailable',
+      vendor: device.provider,
       credentialType: 'certificate',
-      credentialId: pickString(responsePayload.credentialId) ?? certificateArn ?? null,
-      thingName: thingName ?? null,
-      certificateArn: certificateArn ?? null,
-      certificatePem: isAliyun ? null : certificatePem ?? null,
-      endpoint: pickString(responsePayload.endpoint) ?? null,
-      region: pickString(responsePayload.region) ?? null,
-      fingerprint: pickString(responsePayload.fingerprint) ?? null,
-      rootCaPem,
-      issuedAt: provisionRecord?.createdAt?.toISOString() ?? null,
+      credentialId: null,
+      thingName: null,
+      certificateArn: null,
+      certificatePem: null,
+      endpoint: null,
+      region: null,
+      fingerprint: null,
+      rootCaPem: null,
+      issuedAt: null,
       expiresAt: null,
-      hasPrivateKey: isAliyun ? false : Boolean(privateKeyPem),
-      privateKeyPem: isAliyun ? null : privateKeyPem ?? null,
-      hasDeviceSecret: isAliyun ? Boolean(deviceSecret ?? privateKeyPem) : false,
-      downloadAvailable: Boolean(((isAliyun ? deviceSecret ?? privateKeyPem : certificatePem || privateKeyPem)) && !claimedAt),
-      claimAvailable: Boolean(((isAliyun ? deviceSecret ?? privateKeyPem : certificatePem || privateKeyPem)) && !claimedAt),
-      claimedAt,
-      source: provisionRecord ? 'iot_provision_records' : 'unavailable',
-      productKey: pickString(responsePayload.productKey) ?? device.productKey,
-      metadata: {
-        request: requestPayload,
-        response: omitSensitiveCredentialPayload(responsePayload),
-      },
-      updatedAt: provisionRecord?.updatedAt?.toISOString() ?? null,
+      hasPrivateKey: false,
+      privateKeyPem: null,
+      hasDeviceSecret: false,
+      downloadAvailable: false,
+      claimAvailable: false,
+      claimedAt: null,
+      source: 'unavailable',
+      productKey: device.productKey,
+      metadata: {},
+      updatedAt: null,
     };
   }
 
@@ -1374,7 +1419,7 @@ export class DeviceApplicationService {
     requestId: string,
     trigger: 'admin.devices.create' | 'devices.create',
   ): Promise<Record<string, unknown>> {
-    const provision = await this.iotApplicationService.provisionOnDeviceCreated({
+    const provision = await this.deviceIdentityService.provisionOnDeviceCreated({
       deviceId: device.id,
       deviceSn: device.deviceSn,
       provider: device.provider,
@@ -1386,6 +1431,22 @@ export class DeviceApplicationService {
     return {
       ...this.toDeviceDetail(device),
       iotProvision: provision,
+    };
+  }
+
+  private buildSkippedProvisionResponse(
+    device: DeviceEntity,
+    requestId: string,
+  ): Record<string, unknown> {
+    return {
+      ...this.toDeviceDetail(device),
+      iotProvision: {
+        ok: true,
+        skipped: true,
+        status: 'existing',
+        reason: 'device_already_exists',
+        requestId,
+      },
     };
   }
 
@@ -1428,7 +1489,7 @@ export class DeviceApplicationService {
     }
   }
 
-  private async createOrRestoreDevice(input: {
+  private async createOrUpsertDevice(input: {
     tenantId: string;
     name: string;
     deviceSn: string;
@@ -1440,19 +1501,20 @@ export class DeviceApplicationService {
     locale: string;
     market: string;
     requestId: string;
-  }): Promise<{ entity: DeviceEntity; restored: boolean }> {
+  }): Promise<{ entity: DeviceEntity; state: 'created' | 'reused' | 'updated' }> {
     const existing = await this.deviceRepository.findOne({
       where: { tenantId: input.tenantId, deviceSn: input.deviceSn },
-      withDeleted: true,
     });
 
-    if (existing && !existing.deletedAt) {
-      throw new Error(`deviceSn already exists: ${input.deviceSn}`);
-    }
-
     if (existing) {
-      await this.deviceRepository.restore(existing.id);
-      existing.deletedAt = null;
+      const needsUpdate =
+        existing.provider !== input.provider
+        || existing.status !== input.status
+        || existing.onlineStatus !== input.onlineStatus
+        || normalizeNullable(existing.boundUserId) !== normalizeNullable(input.boundUserId);
+      if (!needsUpdate) {
+        return { entity: existing, state: 'reused' };
+      }
       existing.name = input.name;
       existing.productKey = input.productKey;
       existing.provider = input.provider;
@@ -1466,7 +1528,7 @@ export class DeviceApplicationService {
       if (!input.boundUserId) {
         await this.deviceBindingService.closeActiveBindings(input.tenantId, saved.id, input.requestId);
       }
-      return { entity: saved, restored: true };
+      return { entity: saved, state: 'updated' };
     }
 
     const created = await this.deviceRepository.save(
@@ -1483,11 +1545,11 @@ export class DeviceApplicationService {
         market: input.market,
       }),
     );
-    return { entity: created, restored: false };
+    return { entity: created, state: 'created' };
   }
 }
 
-type ConsumableCertificateDetail = {
+type ConsumableDeviceCredentialDetail = {
   certificateArn: null | string;
   certificatePem: null | string;
   credentialId?: null | string;
@@ -1523,6 +1585,13 @@ function pickBoolean(value: unknown): boolean {
   }
   const normalized = String(value ?? '').trim().toLowerCase();
   return ['1', 'true', 'yes', 'y', 'on'].includes(normalized);
+}
+
+function normalizeNullable(value: unknown): string | null {
+  if (typeof value === 'string') {
+    return value;
+  }
+  return value == null ? null : String(value);
 }
 
 function normalizePage(value: unknown): number {
@@ -1571,11 +1640,8 @@ function normalizeCommandResultStatus(
   return pickString(payload.status) ?? 'accepted';
 }
 
-function toVendorName(provider: string): 'aws' | 'aliyun' | 'emqx' {
+function toVendorName(provider: string): 'aws' | 'emqx' {
   const normalized = provider.trim().toLowerCase();
-  if (normalized === 'aliyun') {
-    return 'aliyun';
-  }
   if (normalized === 'emqx') {
     return 'emqx';
   }
@@ -1623,32 +1689,4 @@ async function saveConsumedCredential(
     },
   };
   await credentialRepository.save(credential);
-}
-
-async function saveConsumedProvisionRecord(
-  provisionRepository: Repository<IotProvisionRecordEntity>,
-  record: IotProvisionRecordEntity,
-  method: 'copy' | 'download',
-  requestId: string,
-): Promise<void> {
-  const responsePayload = revealDeviceCredentialPayload(asRecord(record.responsePayloadJson)) ?? {};
-  const nextPayload = { ...responsePayload };
-  nextPayload.retrieval = {
-    ...asRecord(nextPayload.retrieval),
-    method,
-    claimedAt: new Date().toISOString(),
-    requestId,
-  };
-  record.responsePayloadJson = nextPayload;
-  await provisionRepository.save(record);
-}
-
-
-function omitSensitiveCredentialPayload(value: Record<string, unknown>): Record<string, unknown> {
-  const next = { ...value };
-  delete next.certificatePem;
-  delete next.privateKey;
-  delete next.privateKeyPem;
-  delete next.deviceSecret;
-  return next;
 }

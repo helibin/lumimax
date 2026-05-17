@@ -2,24 +2,35 @@ import { Inject, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { generateId } from '@lumimax/runtime';
 import type { Repository } from 'typeorm';
+import { In } from 'typeorm';
 import {
   DeviceEntity,
   MealItemEntity,
   MealRecordEntity,
   RecognitionLogEntity,
 } from '../../common/entities/biz.entities';
-import { FoodAnalysisService } from '../food-analysis/food-analysis.service';
 import { FoodKnowledgeService } from '../food/food-knowledge.service';
+import { FoodPersistenceService } from '../food-query/food-persistence.service';
+import { FoodQueryService } from '../food-query/food-query.service';
+import {
+  applyConfirmedSnapshot,
+  applyFoodQuerySnapshots,
+} from '../food-query/food-query-snapshot.util';
+import type { FoodQueryInputType, StandardFoodCandidate } from '../food-query/food-query.types';
+import { toFoodQueryMarket } from '../food-query/food-query.types';
 import type {
   FoodAnalysisConfirmationOption,
   FoodAnalysisItem,
   NutritionCandidate,
   RecognitionCandidate,
 } from '../interfaces/diet-center.contracts';
-import { NutritionService } from '../nutrition/nutrition.service';
 import { resolveTenantId } from '../../common/tenant-scope.util';
 import { getDefaultLocale } from '../../config/default-locale';
 import { getDefaultDietMarket } from '../market/diet-market';
+import { SpeechRecognitionService } from '../../speech/speech-recognition.service';
+import { looksLikeAudioPayload } from '../../speech/speech-audio.util';
+import { BaseStorageGrpcAdapter } from '../../grpc/base-service.grpc-client';
+import { resolveMealItemAdminNutrition } from './meal-item-admin.util';
 
 @Injectable()
 export class DietApplicationService {
@@ -32,9 +43,14 @@ export class DietApplicationService {
     private readonly mealItemRepository: Repository<MealItemEntity>,
     @InjectRepository(RecognitionLogEntity)
     private readonly recognitionLogRepository: Repository<RecognitionLogEntity>,
-    @Inject(FoodAnalysisService) private readonly foodAnalysisService: FoodAnalysisService,
     @Inject(FoodKnowledgeService) private readonly foodKnowledgeService: FoodKnowledgeService,
-    @Inject(NutritionService) private readonly nutritionService: NutritionService,
+    @Inject(FoodQueryService) private readonly foodQueryService: FoodQueryService,
+    @Inject(FoodPersistenceService)
+    private readonly foodPersistenceService: FoodPersistenceService,
+    @Inject(SpeechRecognitionService)
+    private readonly speechRecognitionService: SpeechRecognitionService,
+    @Inject(BaseStorageGrpcAdapter)
+    private readonly baseStorageGrpcAdapter: BaseStorageGrpcAdapter,
   ) {}
 
   async createMealRecord(input: {
@@ -60,7 +76,7 @@ export class DietApplicationService {
         deviceId: input.deviceId,
         locale: dietContext.locale,
         market: dietContext.market,
-        status: 'created',
+        status: 'active',
         startedAt: new Date(),
         totalCalories: '0',
         totalWeight: '0',
@@ -73,7 +89,9 @@ export class DietApplicationService {
     mealRecordId: string;
     userId: string;
     deviceId: string;
-    imageKey: string;
+    type: 'image' | 'barcode' | 'text' | 'voice';
+    target: string;
+    imageKey?: string;
     imageUrl?: string;
     imageObjectId?: string;
     weightGram: number;
@@ -91,61 +109,61 @@ export class DietApplicationService {
     const countryCode = resolveCountryCode(dietContext);
 
     const startedAt = Date.now();
-    meal.status = 'analyzing';
+    meal.status = 'active';
     meal.locale = dietContext.locale;
     meal.market = dietContext.market;
-    const analysis = await this.foodAnalysisService.identifyFood({
-      imageKey: input.imageKey,
+    await this.mealRecordRepository.save(meal);
+
+    const voiceQueryText = await this.resolveVoiceOrTextQuery({
+      type: input.type,
+      target: input.target,
       imageUrl: input.imageUrl,
-      locale: dietContext.locale ?? undefined,
-      countryCode,
-      requestId: input.requestId,
-    });
-    const nutrition = await this.nutritionService.resolveNutrition({
-      foodName: analysis.foodName,
-      candidateNames: analysis.candidates.map((candidate) => candidate.name),
-      userId: input.userId,
-      tenantId: meal.tenantId,
-      weightGram: input.weightGram,
+      imageKey: input.imageKey ?? input.imageObjectId,
       locale: dietContext.locale ?? undefined,
       market: dietContext.market ?? undefined,
-      countryCode,
-      inputType: 'image',
       requestId: input.requestId,
-      imageConfidence: analysis.confidence,
     });
-    const recognitionStatus =
-      analysis.recognitionStatus === 'success' && nutrition.recognitionStatus === 'success'
-        ? 'success'
-        : 'fallback';
-    const item = await this.mealItemRepository.save(
-      this.mealItemRepository.create({
-        tenantId: meal.tenantId,
-        mealRecordId: meal.id,
-        userId: input.userId,
-        deviceId: input.deviceId,
-        imageKey: input.imageKey,
-        imageObjectId: input.imageObjectId ?? generateId(),
-        foodName: nutrition.canonicalName || nutrition.foodName,
-        weight: toDecimalString(input.weightGram),
-        calories: toDecimalString(nutrition.calories),
-        protein: toDecimalString(nutrition.protein),
-        fat: toDecimalString(nutrition.fat),
-        carbs: toDecimalString(nutrition.carbs),
-        source: nutrition.source,
-        recognitionStatus,
-        locale: dietContext.locale,
-        market: dietContext.market,
-      }),
-    );
 
-    meal.totalCalories = toDecimalString(
-      Number(meal.totalCalories ?? 0) + nutrition.calories,
-    );
-    meal.totalWeight = toDecimalString(
-      Number(meal.totalWeight ?? 0) + input.weightGram,
-    );
-    await this.mealRecordRepository.save(meal);
+    const foodQueryResult = await this.foodQueryService.query({
+      requestId: input.requestId,
+      tenantId: meal.tenantId,
+      userId: input.userId,
+      deviceId: input.deviceId,
+      mealId: meal.id,
+      market: toFoodQueryMarket(dietContext.market ?? undefined),
+      inputType: toFoodQueryInputType(input.type),
+      query: voiceQueryText,
+      candidateNames: [],
+      barcode: input.type === 'barcode' ? input.target.trim() : undefined,
+      imageUrl: input.imageUrl,
+      imageKey: input.imageKey,
+      weightGram: input.weightGram,
+      locale: dietContext.locale ?? undefined,
+      countryCode,
+    });
+    const selected = foodQueryResult.selected;
+    const serving = selected?.nutrientsPerServing;
+    const recognitionStatus = 'pending';
+    const pendingItem = this.mealItemRepository.create({
+      tenantId: meal.tenantId,
+      mealRecordId: meal.id,
+      userId: input.userId,
+      deviceId: input.deviceId,
+      imageKey: input.imageKey,
+      imageObjectId: input.imageObjectId ?? generateId(),
+      foodName: selected?.displayName ?? foodQueryResult.queryItems[0]?.name ?? 'unknown',
+      weight: toDecimalString(input.weightGram),
+      calories: toDecimalString(serving?.caloriesKcal ?? 0),
+      protein: toDecimalString(serving?.proteinGram ?? 0),
+      fat: toDecimalString(serving?.fatGram ?? 0),
+      carbs: toDecimalString(serving?.carbsGram ?? 0),
+      source: selected?.sourceCode ?? 'pending',
+      recognitionStatus,
+      locale: dietContext.locale,
+      market: dietContext.market,
+    });
+    applyFoodQuerySnapshots(pendingItem, foodQueryResult);
+    const item = await this.mealItemRepository.save(pendingItem);
 
     await this.recognitionLogRepository.save(
       this.recognitionLogRepository.create({
@@ -156,11 +174,13 @@ export class DietApplicationService {
         locale: dietContext.locale,
         market: dietContext.market,
         imageKey: input.imageKey,
-        provider: `${analysis.provider}->${nutrition.provider}`,
+        provider: foodQueryResult.recognition?.provider ?? selected?.sourceCode ?? 'food-query',
         status: recognitionStatus,
         latencyMs: Date.now() - startedAt,
         requestPayloadJson: {
           mealRecordId: input.mealRecordId,
+          type: input.type,
+          target: input.target,
           imageKey: input.imageKey,
           imageObjectId: item.imageObjectId,
           weightGram: input.weightGram,
@@ -172,22 +192,26 @@ export class DietApplicationService {
           itemId: item.id,
           mealRecordId: meal.id,
           foodName: item.foodName,
-          identifiedName: analysis.foodName,
-          calories: item.calories,
-          protein: item.protein,
-          fat: item.fat,
-          carbs: item.carbs,
-          analysis,
-          nutrition,
+          querySnapshot: foodQueryResult,
+          debugSnapshot: foodQueryResult.debug ?? null,
+          recognitionSnapshot: foodQueryResult.recognition,
+          resultSnapshot: selected,
+          rawCandidates: foodQueryResult.candidates,
         },
       }),
     );
 
+    const recognitionCandidates = foodQueryResult.queryItems.map((queryItem) =>
+      toRecognitionCandidate(queryItem, foodQueryResult.recognition?.provider ?? 'vision'),
+    );
+    const nutritionCandidates = foodQueryResult.candidates.map((candidate) =>
+      toNutritionCandidate(candidate, input.weightGram),
+    );
     const analysisItems = buildAnalysisItems({
       itemId: item.id,
       weightGram: input.weightGram,
-      recognitionCandidates: analysis.candidates,
-      nutritionCandidates: asNutritionCandidates(nutrition.candidates),
+      recognitionCandidates,
+      nutritionCandidates,
     });
     const estimatedNutrition = {
       calories: Number(item.calories),
@@ -195,17 +219,19 @@ export class DietApplicationService {
       fat: Number(item.fat),
       carbs: Number(item.carbs),
       source: item.source,
-      provider: nutrition.provider,
-      verifiedLevel: nutrition.verifiedLevel,
+      provider: selected?.sourceCode ?? 'food-query',
+      verifiedLevel: selected?.verifiedLevel ?? 'unverified',
     };
     const confirmationOptions = buildConfirmationOptions({
-      analysisCandidates: analysis.candidates,
-      nutritionCandidates: asNutritionCandidates(nutrition.candidates),
+      analysisCandidates: recognitionCandidates,
+      nutritionCandidates,
     });
     const requiresUserConfirmation = shouldRequireUserConfirmation({
-      recognitionStatus,
-      confidence: analysis.confidence,
+      recognitionStatus: foodQueryResult.recognition?.status ?? 'fallback',
+      confidence: foodQueryResult.recognition?.confidence,
       confirmationOptions,
+      imageType: foodQueryResult.recognition?.imageType,
+      selected,
     });
 
     return {
@@ -219,22 +245,16 @@ export class DietApplicationService {
       confirmationOptions,
       requiresUserConfirmation,
       recognition: {
-        provider: analysis.provider,
-        confidence: analysis.confidence ?? null,
-        candidates: analysis.candidates,
+        provider: foodQueryResult.recognition?.provider ?? null,
+        confidence: foodQueryResult.recognition?.confidence ?? null,
+        candidates: recognitionCandidates,
       },
       nutrition: {
-        provider: nutrition.provider,
-        routing: nutrition.routing,
-        candidates: nutrition.candidates,
+        provider: selected?.sourceCode ?? null,
+        routing: foodQueryResult.routing,
+        candidates: nutritionCandidates,
       },
-      mealTotal: {
-        totalCalories: Number(meal.totalCalories),
-        totalWeight: Number(meal.totalWeight),
-        itemCount: await this.mealItemRepository.count({
-          where: { mealRecordId: meal.id },
-        }),
-      },
+      mealTotal: await this.buildMealTotal(meal.id),
     };
   }
 
@@ -256,7 +276,7 @@ export class DietApplicationService {
     requestId: string;
   }): Promise<Record<string, unknown>> {
     const meal = await this.mustGetMealForUser(input.mealRecordId, input.userId);
-    this.assertMealStatus(meal.status, ['created', 'analyzing']);
+    this.assertMealStatus(meal.status, ['active', 'created', 'analyzing']);
 
     const item = await this.mustGetMealItem(input.itemId, meal.id);
     const weightGram = Math.max(1, input.weightGram ?? Number(item.weight ?? 0));
@@ -276,40 +296,54 @@ export class DietApplicationService {
       carbs: Number(item.carbs ?? 0),
       weight: Number(item.weight ?? 0),
     };
-    const nutrition = await this.nutritionService.resolveNutrition({
-      foodName: input.foodName,
-      candidateNames: [input.foodName],
-      userId: input.userId,
+    const foodQueryResult = await this.foodQueryService.query({
+      requestId: input.requestId,
       tenantId: meal.tenantId,
+      userId: input.userId,
+      mealId: meal.id,
+      market: toFoodQueryMarket(dietContext.market ?? undefined),
+      inputType: 'manual_text',
+      query: input.foodName,
+      candidateNames: buildConfirmCandidateNames(item, input.foodName),
       weightGram,
       locale: dietContext.locale ?? undefined,
-      market: dietContext.market ?? undefined,
       countryCode,
-      inputType: 'text',
+    });
+    const selected = foodQueryResult.selected;
+    if (!selected) {
+      throw new Error('food query returned no candidate for confirm');
+    }
+    const serving = selected.nutrientsPerServing;
+    const persisted = await this.foodPersistenceService.persistConfirmedFood({
+      tenantId: meal.tenantId,
+      userId: input.userId,
+      locale: dietContext.locale ?? undefined,
+      countryCode,
+      candidate: selected,
       requestId: input.requestId,
     });
 
-    item.foodName = nutrition.canonicalName || nutrition.foodName;
+    item.foodName = selected.displayName;
     item.weight = toDecimalString(weightGram);
-    item.calories = toDecimalString(nutrition.calories);
-    item.protein = toDecimalString(nutrition.protein);
-    item.fat = toDecimalString(nutrition.fat);
-    item.carbs = toDecimalString(nutrition.carbs);
-    item.source = nutrition.source;
+    item.calories = toDecimalString(serving?.caloriesKcal ?? 0);
+    item.protein = toDecimalString(serving?.proteinGram ?? 0);
+    item.fat = toDecimalString(serving?.fatGram ?? 0);
+    item.carbs = toDecimalString(serving?.carbsGram ?? 0);
+    item.source = selected.sourceCode;
     item.recognitionStatus = 'confirmed';
     item.locale = dietContext.locale;
     item.market = dietContext.market;
+    applyConfirmedSnapshot(item, {
+      foodId: persisted.foodId,
+      result: foodQueryResult,
+      selected,
+    });
     const savedItem = await this.mealItemRepository.save(item);
 
     meal.locale = dietContext.locale;
     meal.market = dietContext.market;
-    meal.totalCalories = toDecimalString(
-      Number(meal.totalCalories ?? 0) - previousTotals.calories + nutrition.calories,
-    );
-    meal.totalWeight = toDecimalString(
-      Number(meal.totalWeight ?? 0) - previousTotals.weight + weightGram,
-    );
     await this.mealRecordRepository.save(meal);
+    await this.recalculateMealTotals(meal);
 
     await this.recognitionLogRepository.save(
       this.recognitionLogRepository.create({
@@ -320,7 +354,7 @@ export class DietApplicationService {
         locale: dietContext.locale,
         market: dietContext.market,
         imageKey: item.imageKey,
-        provider: `user-confirmation->${nutrition.provider}`,
+        provider: `user-confirmation->${selected.sourceCode}`,
         status: 'confirmed',
         latencyMs: 0,
         requestPayloadJson: {
@@ -340,7 +374,8 @@ export class DietApplicationService {
         responsePayloadJson: {
           itemId: savedItem.id,
           canonicalName: savedItem.foodName,
-          nutritionCandidates: nutrition.candidates,
+          nutritionCandidates: foodQueryResult.candidates,
+          debugSnapshot: foodQueryResult.debug ?? null,
         },
       }),
     );
@@ -354,14 +389,14 @@ export class DietApplicationService {
       originalWeightGram: previousTotals.weight,
       correctedWeightGram: weightGram,
       originalProviderCode: previousTotals.source,
-      correctedProviderCode: nutrition.provider,
+      correctedProviderCode: selected.sourceCode,
       correctionType: 'manual_confirm',
       extraJson: {
         selectedFoodId: input.selectedFoodId,
         correctedCount: input.correctedCount,
         confirmationSource: input.confirmationSource ?? 'recognized',
         countryCode,
-        nutritionCandidates: nutrition.candidates,
+        nutritionCandidates: foodQueryResult.candidates,
       },
       requestId: input.requestId,
     });
@@ -371,16 +406,13 @@ export class DietApplicationService {
       mealRecordId: meal.id,
       item: this.toMealItem(savedItem),
       nutrition: {
-        provider: nutrition.provider,
-        verifiedLevel: nutrition.verifiedLevel,
-        candidates: nutrition.candidates,
+        provider: selected.sourceCode,
+        verifiedLevel: selected.verifiedLevel,
+        candidates: foodQueryResult.candidates,
       },
       confirmationSource: input.confirmationSource ?? 'recognized',
       selectedFoodId: input.selectedFoodId ?? null,
-      mealTotal: {
-        totalCalories: Number(meal.totalCalories),
-        totalWeight: Number(meal.totalWeight),
-      },
+      mealTotal: await this.buildMealTotal(meal.id),
       locale: meal.locale,
       market: meal.market,
     };
@@ -394,9 +426,13 @@ export class DietApplicationService {
     const meal = await this.assertMealReadyForAnalysis(input.mealRecordId, input.userId);
     meal.status = 'finished';
     meal.finishedAt = new Date();
+    await this.recalculateMealTotals(meal);
     await this.mealRecordRepository.save(meal);
     const items = await this.mealItemRepository.find({
-      where: { mealRecordId: meal.id },
+      where: {
+        mealRecordId: meal.id,
+        recognitionStatus: In(['confirmed', 'corrected']),
+      },
       order: { createdAt: 'ASC' },
     });
 
@@ -413,7 +449,7 @@ export class DietApplicationService {
       },
       locale: meal.locale,
       market: meal.market,
-      items: items.map((item) => this.toMealItem(item)),
+      items: items.map((item) => this.toMealItemResult(item)),
     };
   }
 
@@ -457,7 +493,9 @@ export class DietApplicationService {
     service: 'meals';
     method: string;
     payload?: Record<string, unknown>;
+    requestId?: string;
   }): Promise<T> {
+    const requestId = pickString(input.requestId) ?? pickString(input.payload?.requestId);
     const page = Math.max(1, Number(input.payload?.page ?? 1));
     const pageSize = Math.max(1, Number(input.payload?.pageSize ?? 20));
 
@@ -481,12 +519,29 @@ export class DietApplicationService {
         const meal = await this.mustGetMeal(mealRecordId);
         const items = await this.mealItemRepository.find({
           where: { mealRecordId: meal.id },
-          order: { createdAt: 'ASC' },
+          order: { createdAt: 'DESC' },
         });
+        const recognitionLatencyByItemId = await this.loadRecognitionLatencyByItemId(meal.id);
         return {
           ...this.toMealAdminItem(meal),
-          items: items.map((item) => this.toMealItem(item)),
+          items: await Promise.all(
+            items.map((item) => this.toMealItemAdmin(item, requestId, recognitionLatencyByItemId)),
+          ),
         } as T;
+      }
+      case 'meals.GetMealItem': {
+        const itemId = String(input.payload?.itemId ?? input.payload?.id ?? '').trim();
+        if (!itemId) {
+          throw new Error('itemId is required');
+        }
+        const item = await this.mealItemRepository.findOne({
+          where: { id: itemId },
+        });
+        if (!item) {
+          throw new Error(`meal item not found: ${itemId}`);
+        }
+        const recognitionLatencyByItemId = await this.loadRecognitionLatencyByItemId(item.mealRecordId);
+        return (await this.toMealItemAdmin(item, requestId, recognitionLatencyByItemId)) as T;
       }
       case 'meals.ListMealItems': {
         const mealRecordId = String(input.payload?.id ?? input.payload?.mealRecordId ?? '').trim();
@@ -498,10 +553,13 @@ export class DietApplicationService {
             mealRecordId,
             ...buildMealItemFilters(input.payload),
           },
-          order: { createdAt: 'ASC' },
+          order: { createdAt: 'DESC' },
         });
+        const recognitionLatencyByItemId = await this.loadRecognitionLatencyByItemId(mealRecordId);
         return this.paginate<T>(
-          items.map((item) => this.toMealItem(item)),
+          await Promise.all(
+            items.map((item) => this.toMealItemAdmin(item, requestId, recognitionLatencyByItemId)),
+          ),
           1,
           Math.max(items.length, 1),
           items.length,
@@ -517,7 +575,7 @@ export class DietApplicationService {
     userId: string,
   ): Promise<MealRecordEntity> {
     const meal = await this.mustGetMealForUser(mealRecordId, userId);
-    this.assertMealStatus(meal.status, ['created', 'analyzing']);
+    this.assertMealStatus(meal.status, ['active', 'created', 'analyzing']);
     return meal;
   }
 
@@ -633,6 +691,53 @@ export class DietApplicationService {
     };
   }
 
+  private async buildMealTotal(mealId: string): Promise<Record<string, unknown>> {
+    const confirmedItems = await this.mealItemRepository.find({
+      where: {
+        mealRecordId: mealId,
+        recognitionStatus: In(['confirmed', 'corrected']),
+      },
+    });
+    const totalCalories = confirmedItems.reduce(
+      (sum, item) => sum + Number(item.calories ?? 0),
+      0,
+    );
+    const totalWeight = confirmedItems.reduce((sum, item) => sum + Number(item.weight ?? 0), 0);
+    return {
+      totalCalories: round(totalCalories),
+      totalWeight: round(totalWeight),
+      itemCount: await this.mealItemRepository.count({ where: { mealRecordId: mealId } }),
+    };
+  }
+
+  private async recalculateMealTotals(meal: MealRecordEntity): Promise<void> {
+    const confirmedItems = await this.mealItemRepository.find({
+      where: {
+        mealRecordId: meal.id,
+        recognitionStatus: In(['confirmed', 'corrected']),
+      },
+    });
+    meal.totalCalories = toDecimalString(
+      confirmedItems.reduce((sum, item) => sum + Number(item.calories ?? 0), 0),
+    );
+    meal.totalWeight = toDecimalString(
+      confirmedItems.reduce((sum, item) => sum + Number(item.weight ?? 0), 0),
+    );
+    await this.mealRecordRepository.save(meal);
+  }
+
+  private toMealItemResult(item: MealItemEntity): Record<string, unknown> {
+    return {
+      itemId: item.id,
+      foodName: item.foodName,
+      foodType: 'unknown',
+      weightGram: Number(item.weight),
+      caloriesKcal: Number(item.calories),
+      confidence: 1,
+      status: item.recognitionStatus,
+    };
+  }
+
   private toMealItem(item: MealItemEntity): Record<string, unknown> {
     return {
       itemId: item.id,
@@ -647,10 +752,128 @@ export class DietApplicationService {
       imageKey: item.imageKey,
       imageObjectId: item.imageObjectId,
       recognitionStatus: item.recognitionStatus,
+      foodId: item.foodId ?? null,
       locale: item.locale,
       market: item.market,
       createdAt: item.createdAt.toISOString(),
     };
+  }
+
+  private async loadRecognitionLatencyByItemId(
+    mealRecordId: string,
+  ): Promise<Map<string, number | null>> {
+    const logs = await this.recognitionLogRepository.find({
+      where: { mealId: mealRecordId },
+      order: { createdAt: 'ASC' },
+    });
+    const logsByItemId = new Map<string, RecognitionLogEntity[]>();
+    for (const log of logs) {
+      const itemId = pickRecognitionLogItemId(log);
+      if (!itemId) {
+        continue;
+      }
+      const bucket = logsByItemId.get(itemId) ?? [];
+      bucket.push(log);
+      logsByItemId.set(itemId, bucket);
+    }
+
+    const recognitionLatencyByItemId = new Map<string, number | null>();
+    for (const [itemId, itemLogs] of logsByItemId) {
+      const withLatency = itemLogs.find((log) => Number(log.latencyMs) > 0);
+      const picked = withLatency ?? itemLogs[0];
+      recognitionLatencyByItemId.set(
+        itemId,
+        picked && Number.isFinite(Number(picked.latencyMs)) ? Number(picked.latencyMs) : null,
+      );
+    }
+    return recognitionLatencyByItemId;
+  }
+
+  private async toMealItemAdmin(
+    item: MealItemEntity,
+    requestId?: string,
+    recognitionLatencyByItemId?: Map<string, number | null>,
+  ): Promise<Record<string, unknown>> {
+    const nutrition = resolveMealItemAdminNutrition(item);
+    const imagePreviewUrl = await this.resolveMealItemImagePreviewUrl(item.imageKey, requestId);
+    const recognitionLatencyMs = recognitionLatencyByItemId?.has(item.id)
+      ? recognitionLatencyByItemId.get(item.id) ?? null
+      : null;
+    return {
+      ...this.toMealItem(item),
+      weight: nutrition.weight,
+      calories: nutrition.calories,
+      protein: nutrition.protein,
+      fat: nutrition.fat,
+      carbs: nutrition.carbs,
+      recognitionLatencyMs,
+      imagePreviewUrl,
+      querySnapshot: item.querySnapshot ?? null,
+      recognitionSnapshot: item.recognitionSnapshot ?? null,
+      resultSnapshot: item.resultSnapshot ?? null,
+      rawCandidates: item.rawCandidates ?? null,
+      selectedCandidate: item.selectedCandidate ?? null,
+    };
+  }
+
+  private async resolveMealItemImagePreviewUrl(
+    imageKey?: string | null,
+    requestId?: string,
+  ): Promise<string | null> {
+    const objectKey = pickString(imageKey);
+    if (!objectKey) {
+      return null;
+    }
+    try {
+      const signed = await this.baseStorageGrpcAdapter.createSignedReadUrl<Record<string, unknown>>(
+        { objectKey },
+        requestId,
+      );
+      return pickString(signed.readUrl) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async resolveVoiceOrTextQuery(input: {
+    type: 'image' | 'barcode' | 'text' | 'voice';
+    target: string;
+    imageUrl?: string;
+    imageKey?: string;
+    locale?: string;
+    market?: string;
+    requestId: string;
+  }): Promise<string | undefined> {
+    if (input.type === 'text') {
+      return input.target.trim() || undefined;
+    }
+    if (input.type !== 'voice') {
+      return undefined;
+    }
+
+    const needsTranscription = looksLikeAudioPayload({
+      target: input.target,
+      audioUrl: input.imageUrl,
+      audioKey: input.imageKey,
+    });
+    if (!needsTranscription) {
+      return input.target.trim() || undefined;
+    }
+
+    if (!this.speechRecognitionService.isEnabled()) {
+      throw new Error(
+        '语音输入需要服务端转写，请配置 SPEECH_RECOGNITION_ENABLED 及对应 Provider 密钥',
+      );
+    }
+
+    const transcribed = await this.speechRecognitionService.transcribe({
+      requestId: input.requestId,
+      locale: input.locale,
+      market: input.market,
+      audioUrl: input.imageUrl,
+      audioKey: input.imageKey ?? input.target,
+    });
+    return transcribed.text.trim() || undefined;
   }
 
 }
@@ -725,6 +948,87 @@ function resolveCountryCode(input: {
 
 function pickString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function pickRecognitionLogItemId(log: RecognitionLogEntity): string | undefined {
+  const response = log.responsePayloadJson;
+  const request = log.requestPayloadJson;
+  if (response && typeof response === 'object' && !Array.isArray(response)) {
+    const fromResponse = pickString((response as Record<string, unknown>).itemId);
+    if (fromResponse) {
+      return fromResponse;
+    }
+  }
+  if (request && typeof request === 'object' && !Array.isArray(request)) {
+    return pickString((request as Record<string, unknown>).itemId);
+  }
+  return undefined;
+}
+
+function buildConfirmCandidateNames(
+  item: Pick<MealItemEntity, 'querySnapshot' | 'selectedCandidate' | 'rawCandidates' | 'foodName'>,
+  selectedFoodName: string,
+): string[] {
+  const querySnapshot = isRecord(item.querySnapshot) ? item.querySnapshot : undefined;
+  const routingValue = querySnapshot?.routing;
+  const routing = isRecord(routingValue) ? routingValue : undefined;
+  const names = [
+    selectedFoodName,
+    item.foodName,
+    ...readStringArray(routing?.queryNames),
+    ...collectCandidateNames(item.selectedCandidate),
+    ...collectCandidateListNames(item.rawCandidates),
+  ];
+  return dedupeNonEmptyStrings(names).slice(0, 8);
+}
+
+function collectCandidateListNames(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((item) => collectCandidateNames(item));
+}
+
+function collectCandidateNames(value: unknown): string[] {
+  if (!isRecord(value)) {
+    return [];
+  }
+  const record = value as Record<string, unknown>;
+  return dedupeNonEmptyStrings([
+    pickString(record.name),
+    pickString(record.displayName),
+    pickString(record.canonicalName),
+    pickString(record.normalizedName),
+    pickString(record.brandName),
+  ]);
+}
+
+function readStringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.map((item) => pickString(item)).filter((item): item is string => Boolean(item))
+    : [];
+}
+
+function dedupeNonEmptyStrings(values: Array<string | undefined | null>): string[] {
+  const seen = new Set<string>();
+  const output: string[] = [];
+  for (const value of values) {
+    const trimmed = value?.trim();
+    if (!trimmed) {
+      continue;
+    }
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    output.push(trimmed);
+  }
+  return output;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function buildAnalysisItems(input: {
@@ -847,6 +1151,8 @@ function shouldRequireUserConfirmation(input: {
   recognitionStatus: 'success' | 'fallback';
   confidence?: number;
   confirmationOptions: FoodAnalysisConfirmationOption[];
+  imageType?: string;
+  selected?: StandardFoodCandidate;
 }): boolean {
   if (input.recognitionStatus !== 'success') {
     return true;
@@ -854,7 +1160,39 @@ function shouldRequireUserConfirmation(input: {
   if ((input.confidence ?? 0) < 0.75) {
     return true;
   }
+  if (
+    isPackagedFoodRecognition(input.imageType)
+    && (!input.selected || isIncompletePackagedFoodCandidate(input.selected))
+  ) {
+    return true;
+  }
   return input.confirmationOptions.length > 1;
+}
+
+function isPackagedFoodRecognition(imageType?: string): boolean {
+  return imageType === 'nutrition_label'
+    || imageType === 'packaged_food_front'
+    || imageType === 'barcode_or_qr';
+}
+
+function isIncompletePackagedFoodCandidate(candidate: StandardFoodCandidate): boolean {
+  if (candidate.type !== 'packaged_food') {
+    return true;
+  }
+  if (candidate.sourceCode === 'vision') {
+    return true;
+  }
+  if (candidate.verifiedLevel === 'unverified' || candidate.verifiedLevel === 'estimated') {
+    return true;
+  }
+  const nutrients = candidate.nutrientsPer100g;
+  if (!nutrients) {
+    return true;
+  }
+  return nutrients.caloriesKcal <= 0
+    && nutrients.proteinGram <= 0
+    && nutrients.fatGram <= 0
+    && nutrients.carbsGram <= 0;
 }
 
 function normalizeQuantity(value?: number): number | undefined {
@@ -864,6 +1202,107 @@ function normalizeQuantity(value?: number): number | undefined {
   return Math.round(Number(value));
 }
 
-function asNutritionCandidates(value: unknown): NutritionCandidate[] {
-  return Array.isArray(value) ? (value as unknown as NutritionCandidate[]) : [];
+function toRecognitionCandidate(
+  item: {
+    type: string;
+    name: string;
+    displayName?: string;
+    confidence: number;
+    quantity?: number;
+    estimatedWeightGram?: number;
+    children?: Array<{
+      type?: string;
+      name: string;
+      displayName?: string;
+      confidence?: number;
+      count?: number;
+      estimatedWeightGram?: number;
+    }>;
+  },
+  provider: string,
+): RecognitionCandidate {
+  const identity = {
+    canonicalName: item.displayName ?? item.name,
+    normalizedName: (item.displayName ?? item.name).trim().toLowerCase(),
+  };
+  return {
+    type: item.type as RecognitionCandidate['type'],
+    name: item.name,
+    displayName: item.displayName ?? item.name,
+    canonicalName: identity.canonicalName,
+    normalizedName: identity.normalizedName,
+    confidence: item.confidence,
+    provider,
+    source: provider,
+    count: item.quantity,
+    estimatedWeightGram: item.estimatedWeightGram,
+    children: (item.children ?? []).map((child) => ({
+      type: child.type as RecognitionCandidate['type'],
+      name: child.name,
+      displayName: child.displayName ?? child.name,
+      canonicalName: child.displayName ?? child.name,
+      normalizedName: (child.displayName ?? child.name).trim().toLowerCase(),
+      confidence: child.confidence ?? 0.5,
+      provider,
+      source: provider,
+      count: child.count,
+      estimatedWeightGram: child.estimatedWeightGram,
+    })),
+  };
+}
+
+function toNutritionCandidate(
+  candidate: StandardFoodCandidate,
+  weightGram: number,
+): NutritionCandidate {
+  const per100g = candidate.nutrientsPer100g ?? {
+    caloriesKcal: 0,
+    proteinGram: 0,
+    fatGram: 0,
+    carbsGram: 0,
+  };
+  const ratio = Math.max(weightGram, 1) / 100;
+  return {
+    foodName: candidate.displayName,
+    canonicalName: candidate.displayName,
+    normalizedName: candidate.normalizedName,
+    provider: candidate.sourceCode,
+    source: candidate.sourceCode,
+    matchedBy:
+      candidate.sourceCode === 'internal'
+        ? 'internal'
+        : candidate.verifiedLevel === 'unverified'
+          ? 'llm_estimated'
+          : 'provider',
+    verifiedLevel:
+      candidate.verifiedLevel === 'unverified' || candidate.verifiedLevel === 'estimated'
+        ? 'estimated'
+        : 'verified',
+    caloriesPer100g: per100g.caloriesKcal,
+    proteinPer100g: per100g.proteinGram,
+    fatPer100g: per100g.fatGram,
+    carbsPer100g: per100g.carbsGram,
+    calories: round(per100g.caloriesKcal * ratio),
+    protein: round(per100g.proteinGram * ratio),
+    fat: round(per100g.fatGram * ratio),
+    carbs: round(per100g.carbsGram * ratio),
+    confidence: candidate.confidence,
+  };
+}
+
+function toFoodQueryInputType(type: 'image' | 'barcode' | 'text' | 'voice'): FoodQueryInputType {
+  switch (type) {
+    case 'barcode':
+      return 'barcode';
+    case 'text':
+      return 'manual_text';
+    case 'voice':
+      return 'voice_text';
+    default:
+      return 'image';
+  }
+}
+
+function round(value: number): number {
+  return Math.round(value * 100) / 100;
 }

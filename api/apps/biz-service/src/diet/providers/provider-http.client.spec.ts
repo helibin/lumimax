@@ -124,6 +124,56 @@ test('postJson classifies rate limit response', async () => {
   }
 });
 
+test('postJson retries once on retryable 503 response', async () => {
+  const client = new DietProviderHttpClient({ debug() {} } as never);
+  const originalFetch = globalThis.fetch;
+  const originalMaxAttempts = process.env.THIRD_PARTY_HTTP_MAX_ATTEMPTS;
+  const originalRetryDelayMs = process.env.THIRD_PARTY_HTTP_RETRY_DELAY_MS;
+  let callCount = 0;
+  process.env.THIRD_PARTY_HTTP_MAX_ATTEMPTS = '2';
+  process.env.THIRD_PARTY_HTTP_RETRY_DELAY_MS = '0';
+  globalThis.fetch = (async () => {
+    callCount += 1;
+    if (callCount === 1) {
+      return new Response('{"code":50508,"message":"System is too busy now. Please try again later.","data":null}', {
+        status: 503,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    return new Response('{"items":[{"name":"rice"}]}', {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }) as typeof fetch;
+
+  try {
+    const result = await client.postJson<{ items: Array<{ name: string }> }>({
+      url: 'https://api.siliconflow.cn/v1/chat/completions',
+      body: {
+        model: 'Qwen/Qwen3-VL-8B-Instruct',
+      },
+      timeoutMs: 100,
+      requestId: 'req_retryable_503',
+    });
+    assert.equal(callCount, 2);
+    assert.deepEqual(result, {
+      items: [{ name: 'rice' }],
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalMaxAttempts === undefined) {
+      delete process.env.THIRD_PARTY_HTTP_MAX_ATTEMPTS;
+    } else {
+      process.env.THIRD_PARTY_HTTP_MAX_ATTEMPTS = originalMaxAttempts;
+    }
+    if (originalRetryDelayMs === undefined) {
+      delete process.env.THIRD_PARTY_HTTP_RETRY_DELAY_MS;
+    } else {
+      process.env.THIRD_PARTY_HTTP_RETRY_DELAY_MS = originalRetryDelayMs;
+    }
+  }
+});
+
 test('getJson redacts edamam app credentials and translates api mismatch message', async () => {
   const client = new DietProviderHttpClient({ debug() {} } as never);
   const originalFetch = globalThis.fetch;
@@ -154,7 +204,47 @@ test('getJson redacts edamam app credentials and translates api mismatch message
   }
 });
 
-test('postJson logs request params, timing, response preview and result summary', async () => {
+test('getJson failure log includes status summary in message', async () => {
+  const errorLogs: Array<{ message: string; payload: Record<string, unknown> }> = [];
+  const client = new DietProviderHttpClient({
+    debug() {},
+    error(message: string, payload: Record<string, unknown>) {
+      errorLogs.push({ message, payload });
+    },
+  } as never);
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    new Response('{"error":"not found"}', {
+      status: 404,
+      headers: { 'content-type': 'application/json' },
+    })) as typeof fetch;
+
+  try {
+    await assert.rejects(
+      client.getJson({
+        url: 'https://api.nal.usda.gov/fdc/v1/food/2715733?api_key=demo-usda-key',
+        requestId: 'req_usda_404',
+        timeoutMs: 100,
+      }),
+      ExternalServiceError,
+    );
+    assert.equal(errorLogs.length, 1);
+    assert.equal(
+      errorLogs[0]?.message,
+      '第三方调用失败 GET https://api.nal.usda.gov/fdc/v1/food/2715733?api_key=%5BREDACTED%5D kind=not_found status=404 retryable=false',
+    );
+    assert.deepEqual(errorLogs[0]?.payload?.result, {
+      kind: 'not_found',
+      statusCode: 404,
+      retryable: false,
+      userMessage: '第三方资源不存在',
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('postJson logs request params, response event and business result summary', async () => {
   const debugLogs: Array<{ message: string; payload: Record<string, unknown> }> = [];
   const client = new DietProviderHttpClient({
     debug(message: string, payload: Record<string, unknown>) {
@@ -213,22 +303,67 @@ test('postJson logs request params, timing, response preview and result summary'
     assert.equal(debugLogs[1]?.message, '<<< 第三方调用完成 POST 200');
     assert.equal(debugLogs[1]?.payload?.requestId, 'req_third_party_1');
     assert.equal(debugLogs[1]?.payload?.idLabel, 'ReqId');
-    assert.equal(typeof debugLogs[1]?.payload?.durationMs, 'number');
-    assert.deepEqual(debugLogs[1]?.payload?.response, {
+    assert.equal(typeof (debugLogs[1]?.payload?.responseEvent as Record<string, unknown>)?.durationMs, 'number');
+    assert.deepEqual(debugLogs[1]?.payload?.responseEvent, {
+      attempt: 1,
+      maxAttempts: 2,
+      statusCode: 200,
+      ok: true,
+      durationMs: (debugLogs[1]?.payload?.responseEvent as Record<string, unknown>)?.durationMs,
+      finishedAt: (debugLogs[1]?.payload?.responseEvent as Record<string, unknown>)?.finishedAt,
       headers: {
         'content-type': 'application/json',
         'x-request-id': 'req_demo_123',
       },
-      preview: {
-        type: 'object',
-        keys: ['items', 'usage'],
-        size: 2,
-      },
     });
     assert.deepEqual(debugLogs[1]?.payload?.result, {
-      type: 'object',
-      keys: ['items', 'usage'],
-      size: 2,
+      items: [{ name: 'rice' }],
+      usage: {
+        total_tokens: 123,
+      },
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('postJson summarizes llm chat completion result into output', async () => {
+  const debugLogs: Array<{ message: string; payload: Record<string, unknown> }> = [];
+  const client = new DietProviderHttpClient({
+    debug(message: string, payload: Record<string, unknown>) {
+      debugLogs.push({ message, payload });
+    },
+  } as never);
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    new Response(
+      '{"id":"chatcmpl_demo","object":"chat.completion","created":1779014767,"model":"gpt-4.1-mini","choices":[{"finish_reason":"stop","message":{"content":"{\\"imageType\\":\\"food_photo\\",\\"items\\":[{\\"name\\":\\"rice\\",\\"confidence\\":0.98}]}"}}],"usage":{"total_tokens":123},"system_fingerprint":"fp_demo"}',
+      {
+        status: 200,
+        headers: {
+          'content-type': 'application/json',
+        },
+      },
+    )) as typeof fetch;
+
+  try {
+    await client.postJson<Record<string, unknown>>({
+      url: 'https://api.example.com/v1/chat/completions',
+      requestId: 'req_chat_completion_1',
+      body: {
+        model: 'gpt-4.1-mini',
+      },
+      timeoutMs: 100,
+    });
+
+    assert.equal(debugLogs[1]?.message, '<<< 第三方调用完成 POST 200');
+    assert.deepEqual(debugLogs[1]?.payload?.result, {
+      choices: 1,
+      finishReason: 'stop',
+      output: {
+        imageType: 'food_photo',
+        items: [{ name: 'rice', confidence: 0.98 }],
+      },
     });
   } finally {
     globalThis.fetch = originalFetch;

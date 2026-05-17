@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { IotEnvelopeService } from '../src/iot/events/iot-envelope.service';
+import { IotEnvelopeService } from '../src/iot/pipeline/iot-envelope.service';
 
 test('iot envelope validates standard protocol payload', () => {
   process.env.DEFAULT_LOCALE = 'zh-CN';
@@ -14,7 +14,7 @@ test('iot envelope validates standard protocol payload', () => {
       version: '1.0',
     },
     data: {
-      imageKey: 'tmp-file/device/01habcdefghjkmnpqrstvwxyz0/demo.png',
+      target: 'tmp-file/device/01habcdefghjkmnpqrstvwxyz0/demo.png',
     },
   });
   assert.equal(decoded.meta.requestId, '01h0000000000000000000101a');

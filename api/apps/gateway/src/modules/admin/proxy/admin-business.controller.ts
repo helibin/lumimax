@@ -139,14 +139,14 @@ export class AdminBusinessController {
     return this.device(req, 'admin.devices.get', { id });
   }
 
-  @Get('devices/:id/certificate')
-  @AdminPermission('device:certificate:view')
-  @ApiOperation({ summary: '查询设备接入凭据信息' })
-  async getDeviceCertificate(@Req() req: any, @Param('id') id: string) {
-    const result = await this.device(req, 'admin.devices.certificate.get', { id });
+  @Get('devices/:id/credential')
+  @AdminPermission('device:credential:view')
+  @ApiOperation({ summary: '查询设备凭据信息' })
+  async getDeviceCredential(@Req() req: any, @Param('id') id: string) {
+    const result = await this.device(req, 'admin.devices.credential.get', { id });
     await this.writeAdminAuditLog(req, {
-      action: 'device-certificate.view',
-      resourceType: 'device_certificate',
+      action: 'device-credential.view',
+      resourceType: 'device_credential',
       resourceId: id,
       after: {
         deviceId: id,
@@ -158,19 +158,19 @@ export class AdminBusinessController {
     return result;
   }
 
-  @Get('devices/:id/certificate/download')
-  @AdminPermission('device:certificate:download')
-  @ApiOperation({ summary: '下载设备接入凭据包' })
-  async downloadDeviceCertificate(@Req() req: any, @Param('id') id: string, @Res() res: any) {
-    const result = await this.device(req, 'admin.devices.certificate.download', { id });
-    const fileName = pickString(result.fileName) ?? `device-${id}-certificate-package.tar.gz`;
+  @Get('devices/:id/credential/download')
+  @AdminPermission('device:credential:download')
+  @ApiOperation({ summary: '下载设备凭据包' })
+  async downloadDeviceCredential(@Req() req: any, @Param('id') id: string, @Res() res: any) {
+    const result = await this.device(req, 'admin.devices.credential.download', { id });
+    const fileName = pickString(result.fileName) ?? `device-${id}-credential-package.tar.gz`;
     const contentBase64 = pickString(result.contentBase64);
     if (!contentBase64) {
-      throw new Error('certificate package content is empty');
+      throw new Error('device credential package content is empty');
     }
     await this.writeAdminAuditLog(req, {
-      action: 'device-certificate.download',
-      resourceType: 'device_certificate',
+      action: 'device-credential.download',
+      resourceType: 'device_credential',
       resourceId: id,
       after: {
         deviceId: id,
@@ -185,14 +185,14 @@ export class AdminBusinessController {
     res.send(Buffer.from(contentBase64, 'base64'));
   }
 
-  @Post('devices/:id/certificate/claim')
-  @AdminPermission('device:certificate:download')
-  @ApiOperation({ summary: '一次性领取设备接入凭据' })
-  async claimDeviceCertificate(@Req() req: any, @Param('id') id: string) {
-    const result = await this.device(req, 'admin.devices.certificate.claim', { id });
+  @Post('devices/:id/credential/claim')
+  @AdminPermission('device:credential:download')
+  @ApiOperation({ summary: '一次性领取设备凭据' })
+  async claimDeviceCredential(@Req() req: any, @Param('id') id: string) {
+    const result = await this.device(req, 'admin.devices.credential.claim', { id });
     await this.writeAdminAuditLog(req, {
-      action: 'device-certificate.claim',
-      resourceType: 'device_certificate',
+      action: 'device-credential.claim',
+      resourceType: 'device_credential',
       resourceId: id,
       after: {
         deviceId: id,
@@ -204,18 +204,18 @@ export class AdminBusinessController {
     return result;
   }
 
-  @Post('devices/:id/certificate/rotate')
-  @AdminPermission('device:certificate:rotate')
-  @ApiOperation({ summary: '触发设备接入凭据轮换' })
-  async rotateDeviceCertificate(
+  @Post('devices/:id/credential/rotate')
+  @AdminPermission('device:credential:rotate')
+  @ApiOperation({ summary: '触发设备凭据轮换' })
+  async rotateDeviceCredential(
     @Req() req: any,
     @Param('id') id: string,
     @Body() body: Record<string, unknown>,
   ) {
-    const result = await this.device(req, 'admin.devices.certificate.rotate', { id }, {}, body);
+    const result = await this.device(req, 'admin.devices.credential.rotate', { id }, {}, body);
     await this.writeAdminAuditLog(req, {
-      action: 'device-certificate.rotate',
-      resourceType: 'device_certificate',
+      action: 'device-credential.rotate',
+      resourceType: 'device_credential',
       resourceId: id,
       after: {
         deviceId: id,
@@ -402,6 +402,13 @@ export class AdminBusinessController {
     return this.diet(req, 'meals', 'ListMealItems', { id }, true);
   }
 
+  @Get('meal-items/:itemId')
+  @AdminPermission('meal:view')
+  @ApiOperation({ summary: '查询餐次条目详情（含识别快照）' })
+  getMealItem(@Req() req: any, @Param('itemId') itemId: string) {
+    return this.diet(req, 'meals', 'GetMealItem', { itemId });
+  }
+
   @Get('foods')
   @AdminPermission('food:view')
   @ApiOperation({ summary: '查询食物库列表' })
@@ -413,6 +420,13 @@ export class AdminBusinessController {
   @AdminPermission('food:view')
   getFood(@Req() req: any, @Param('id') id: string) {
     return this.diet(req, 'foods', 'GetFood', { id });
+  }
+
+  @Get('user-common-foods')
+  @AdminPermission('food:view')
+  @ApiOperation({ summary: '查询用户沉淀食物数据' })
+  listUserCommonFoods(@Req() req: any, @Query() query: AdminPageQueryDto) {
+    return this.diet(req, 'foods', 'ListUserCommonFoods', toListPayload(query), true);
   }
 
   @Post('foods')

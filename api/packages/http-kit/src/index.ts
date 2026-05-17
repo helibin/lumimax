@@ -6,6 +6,7 @@ export * from './response/api-response.dto';
 export * from './response/api-response.interface';
 export * from './response/exception.filter';
 export * from './response/pagination.dto';
+export * from './response/raw-response.decorator';
 export * from './response/response.factory';
 export * from './response/response.interceptor';
 export * from './swagger/swagger.config';

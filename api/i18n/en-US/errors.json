@@ -12,6 +12,13 @@
   "resource.conflict": "Resource conflict, avoid duplicate operation",
   "request.unprocessable": "Request semantics are not processable",
   "request.too_many": "Too many requests, please retry later",
+  "iot.topic_invalid": "IoT topic or ACL request is invalid",
+  "iot.topic_forbidden": "IoT topic operation is not allowed",
+  "iot.device_not_found": "IoT device was not found or not registered",
+  "iot.device_connection_disabled": "IoT device connection is disabled",
+  "iot.credential_not_matched": "IoT device credential does not match",
+  "iot.credential_inactive": "IoT device credential is inactive",
+  "iot.emqx_queue_mode_http_ingest_disabled": "EMQX is in mq mode (IOT_RECEIVE_MODE=mq): uplink must use the RabbitMQ bridge only. Switch to callback mode or route uplink via the bridge before using HTTP/gRPC ingest",
   "upstream.unavailable": "Upstream service is temporarily unavailable",
   "upstream.timeout": "Upstream service timed out",
   "system.internal_error": "System is busy, please retry later"

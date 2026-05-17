@@ -13,7 +13,7 @@ export interface AppConfigValues {
     userService: number;
     notificationService: number;
     deviceService: number;
-    iotBridgeService: number;
+    iotService: number;
   };
 }
 
@@ -40,7 +40,7 @@ export const AppConfig = registerAs(
         userService: resolvePort('user-service', 4001),
         notificationService: resolvePort('notification-service', 4002),
         deviceService: resolvePort('device-service', 4010),
-        iotBridgeService: resolvePort('iot-bridge-service', 4011),
+        iotService: resolvePort('iot-service', 4011),
       },
     };
   },

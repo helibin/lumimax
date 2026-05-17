@@ -13,13 +13,31 @@ export function readEnvFirst(...names: string[]): string | undefined {
   return undefined;
 }
 
+/** Object storage / STS（base-service） */
 export function resolveCloudRegion(): string | undefined {
-  return readEnvFirst('CLOUD_REGION');
+  return readEnvFirst('STORAGE_REGION');
 }
 
 export function resolveCloudCredentials(): CloudCredentialPair | undefined {
-  const accessKeyId = readEnvFirst('CLOUD_ACCESS_KEY_ID');
-  const secretAccessKey = readEnvFirst('CLOUD_ACCESS_KEY_SECRET');
+  const accessKeyId = readEnvFirst('STORAGE_ACCESS_KEY_ID');
+  const secretAccessKey = readEnvFirst('STORAGE_ACCESS_KEY_SECRET');
+  if (!accessKeyId || !secretAccessKey) {
+    return undefined;
+  }
+  return {
+    accessKeyId,
+    secretAccessKey,
+  };
+}
+
+/** AWS IoT 控制面（iot-service） */
+export function resolveIotRegion(): string | undefined {
+  return readEnvFirst('IOT_REGION');
+}
+
+export function resolveIotCredentials(): CloudCredentialPair | undefined {
+  const accessKeyId = readEnvFirst('IOT_ACCESS_KEY_ID');
+  const secretAccessKey = readEnvFirst('IOT_ACCESS_KEY_SECRET');
   if (!accessKeyId || !secretAccessKey) {
     return undefined;
   }
@@ -30,17 +48,9 @@ export function resolveCloudCredentials(): CloudCredentialPair | undefined {
 }
 
 export function resolveAliyunRegion(): string | undefined {
-  return readEnvFirst('CLOUD_REGION');
+  return resolveCloudRegion();
 }
 
 export function resolveAliyunCredentials(): CloudCredentialPair | undefined {
-  const accessKeyId = readEnvFirst('CLOUD_ACCESS_KEY_ID');
-  const secretAccessKey = readEnvFirst('CLOUD_ACCESS_KEY_SECRET');
-  if (!accessKeyId || !secretAccessKey) {
-    return undefined;
-  }
-  return {
-    accessKeyId,
-    secretAccessKey,
-  };
+  return resolveCloudCredentials();
 }

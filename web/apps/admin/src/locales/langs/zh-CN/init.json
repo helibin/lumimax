@@ -6,7 +6,7 @@
     "loadFailed": "初始化状态加载失败",
     "databaseStep": {
       "title": "数据库检查",
-      "description": "验证数据库连接状态",
+      "description": "验证数据库与 RabbitMQ 初始化状态",
       "heading": "数据库连接已就绪",
       "body": "系统已可访问 {0}，可以继续执行初始化。",
       "database": "数据库",
@@ -19,6 +19,25 @@
       "unavailable": "不可用",
       "notInitialized": "尚未初始化",
       "info": "初始化流程将重建基础系统种子数据，并使用你提供的信息覆盖管理员账号。"
+    },
+    "rabbitmqStep": {
+      "heading": "RabbitMQ 拓扑检查",
+      "body": "部署前会自动准备 vhost、exchange、queue、DLX 与 DLQ。这里可以查看状态并手动补齐。",
+      "connectionStatus": "RabbitMQ 状态",
+      "ready": "已就绪",
+      "unavailable": "未初始化",
+      "pending": "待初始化",
+      "warningTitle": "RabbitMQ 注意事项"
+    },
+    "certsStep": {
+      "heading": "EMQX 证书检查",
+      "body": "首次部署可在这里生成或复用 CA、EMQX 服务端证书和 iot-service 内部客户端证书。",
+      "connectionStatus": "证书状态",
+      "directory": "证书目录",
+      "ready": "已就绪",
+      "unavailable": "未生成",
+      "pending": "待生成",
+      "warningTitle": "EMQX 证书注意事项"
     },
     "adminStep": {
       "title": "管理员账号",
@@ -94,17 +113,25 @@
       "retry": "重试",
       "previous": "上一步",
       "next": "下一步",
-      "initialize": "初始化系统"
+      "initialize": "初始化系统",
+      "initializeCerts": "生成 EMQX 证书",
+      "initializeRabbitmq": "初始化 RabbitMQ"
     },
     "status": {
       "warnings": "注意事项"
     },
     "messages": {
       "databaseNotReady": "初始化状态尚未就绪，请先确认数据库连接正常",
+      "rabbitmqNotReady": "RabbitMQ 拓扑尚未初始化，请先完成 RabbitMQ 初始化",
+      "certsNotReady": "EMQX 启动证书尚未准备好，请先生成证书",
       "passwordMismatch": "两次输入的密码不一致",
       "completeRequired": "请先填写必填信息",
       "initializeSuccess": "系统初始化完成",
-      "initializeFailed": "系统初始化失败"
+      "initializeFailed": "系统初始化失败",
+      "certsInitializeSuccess": "EMQX 启动证书已准备完成",
+      "certsInitializeFailed": "EMQX 启动证书生成失败",
+      "rabbitmqInitializeSuccess": "RabbitMQ 初始化完成",
+      "rabbitmqInitializeFailed": "RabbitMQ 初始化失败"
     }
   }
 }

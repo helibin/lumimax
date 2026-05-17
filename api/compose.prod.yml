@@ -1,27 +1,53 @@
-# API + infra only. Paths are relative to the monorepo root (parent directory).
+# 生产多镜像 API 栈（gateway / base / biz / iot + 基础设施）
 #
-# From repo root:
-#   docker compose -f docker-compose.backend.yml up -d
+# 在仓库根目录：
+#   docker compose -f api/compose.prod.yml --env-file .env up -d
 #
-# From ./api (wrapper):
-#   docker compose -f docker-compose.yml up -d
+# 在 api/ 目录：
+#   docker compose -f compose.prod.yml --env-file ../.env up -d
 
 include:
-  - path: docker-compose.infra.yml
-
-# Backend only: Postgres, RabbitMQ, Redis, gateway, base-service, biz-service.
-# Used by repo-root stack via `include`, or directly:
-#   docker compose -f docker-compose.backend.yml --env-file .env up -d
+  - path: ../compose.infra.yml
 
 x-common-env: &common_env
   NODE_ENV: ${NODE_ENV:-production}
   JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
-  RABBITMQ_URL: ${RABBITMQ_URL:-amqp://root:${RABBITMQ_PASSWORD:-rd}@rabbitmq:5672}
-  RABBITMQ_EVENTS_EXCHANGE: ${RABBITMQ_EVENTS_EXCHANGE:-app.events}
+  RABBITMQ_URL: ${RABBITMQ_URL:-amqp://root:${RABBITMQ_PASSWORD}@rabbitmq:5672}
+  RABBITMQ_EVENTS_EXCHANGE: ${RABBITMQ_EVENTS_EXCHANGE:-lumimax.bus}
   RABBITMQ_EVENTS_EXCHANGE_TYPE: ${RABBITMQ_EVENTS_EXCHANGE_TYPE:-topic}
   REDIS_URL: ${REDIS_URL:-redis://redis:6379}
-  DB_URL: ${DB_URL:-postgresql://postgres:${POSTGRES_PASSWORD:-rd}@postgres:5432/${POSTGRES_DB:-lumimax}}
+  DB_URL: ${DB_URL:-postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-lumimax}}
   DEFAULT_TENANT_ID: ${DEFAULT_TENANT_ID:-tenant000000000000000}
+
+x-iot-transport-env: &iot_transport_env
+  IOT_VENDOR: ${IOT_VENDOR:-emqx}
+  IOT_RECEIVE_MODE: ${IOT_RECEIVE_MODE:-mq}
+  IOT_RABBITMQ_QUEUE: ${IOT_RABBITMQ_QUEUE:-lumimax.q.iot.stream}
+  AWS_SQS_QUEUE_URL: ${AWS_SQS_QUEUE_URL:-}
+  AWS_IOT_ENDPOINT: ${AWS_IOT_ENDPOINT:-}
+  AWS_IOT_POLICY_NAME: ${AWS_IOT_POLICY_NAME:-}
+  AWS_SQS_WAIT_TIME_SECONDS: ${AWS_SQS_WAIT_TIME_SECONDS:-10}
+  AWS_SQS_VISIBILITY_TIMEOUT: ${AWS_SQS_VISIBILITY_TIMEOUT:-60}
+  AWS_SQS_BATCH_SIZE: ${AWS_SQS_BATCH_SIZE:-5}
+  AWS_SQS_IDLE_DELAY_MS: ${AWS_SQS_IDLE_DELAY_MS:-1000}
+  EMQX_BROKER_URL: ${EMQX_BROKER_URL:-mqtts://emqx:8883}
+  EMQX_DEVICE_ENDPOINT: ${EMQX_DEVICE_ENDPOINT:-mqtts://devices.example.com:8883}
+  EMQX_REGION: ${EMQX_REGION:-self-hosted}
+  EMQX_ROOT_CA_PEM: ${EMQX_ROOT_CA_PEM:-}
+  EMQX_ROOT_CA_KEY_PEM: ${EMQX_ROOT_CA_KEY_PEM:-}
+  EMQX_ROOT_CA_PEM_PATH: ${EMQX_ROOT_CA_PEM_PATH:-/app/certs/emqx/ca.crt}
+  EMQX_ROOT_CA_KEY_PEM_PATH: ${EMQX_ROOT_CA_KEY_PEM_PATH:-/app/certs/emqx/ca.key}
+  EMQX_MQTT_USERNAME: ${EMQX_MQTT_USERNAME:-lumimax_iot}
+  EMQX_MQTT_PASSWORD: ${EMQX_MQTT_PASSWORD:-}
+  EMQX_MQTT_CLIENT_CERT_PEM: ${EMQX_MQTT_CLIENT_CERT_PEM:-}
+  EMQX_MQTT_CLIENT_KEY_PEM: ${EMQX_MQTT_CLIENT_KEY_PEM:-}
+  EMQX_MQTT_CLIENT_CERT_PEM_PATH: ${EMQX_MQTT_CLIENT_CERT_PEM_PATH:-/app/certs/emqx/iot-service.crt}
+  EMQX_MQTT_CLIENT_KEY_PEM_PATH: ${EMQX_MQTT_CLIENT_KEY_PEM_PATH:-/app/certs/emqx/iot-service.key}
+  EMQX_HTTP_BASE_URL: ${EMQX_HTTP_BASE_URL:-http://emqx:18083}
+  EMQX_HTTP_TLS_INSECURE: ${EMQX_HTTP_TLS_INSECURE:-}
+  EMQX_API_KEY: ${EMQX_API_KEY:-}
+  EMQX_API_SECRET: ${EMQX_API_SECRET:-}
+  EMQX_AUTH_SECRET: ${EMQX_AUTH_SECRET:-}
 
 services:
   base-service:
@@ -77,6 +103,8 @@ services:
         condition: service_healthy
       base-service:
         condition: service_healthy
+      iot-service:
+        condition: service_healthy
     expose:
       - '4030'
       - '4130'
@@ -87,20 +115,12 @@ services:
       HTTP_PORT: 4030
       GRPC_PORT: 4130
       BASE_SERVICE_GRPC_ENDPOINT: base-service:4120
-      IOT_RECEIVE_MODE: ${IOT_RECEIVE_MODE:-queue}
       IOT_VENDOR: ${IOT_VENDOR:-emqx}
-      IOT_QUEUE_URL: ${IOT_QUEUE_URL:-}
-      IOT_ENDPOINT: ${IOT_ENDPOINT:-}
-      IOT_ROOT_CA_PEM: ${IOT_ROOT_CA_PEM:-}
-      IOT_ROOT_CA_KEY_PEM: ${IOT_ROOT_CA_KEY_PEM:-}
-      IOT_MQTT_USERNAME: ${IOT_MQTT_USERNAME:-}
-      IOT_MQTT_PASSWORD: ${IOT_MQTT_PASSWORD:-}
-      IOT_MQTT_CLIENT_CERT_PEM: ${IOT_MQTT_CLIENT_CERT_PEM:-}
-      IOT_MQTT_CLIENT_KEY_PEM: ${IOT_MQTT_CLIENT_KEY_PEM:-}
-      IOT_QUEUE_WAIT_TIME_SECONDS: ${IOT_QUEUE_WAIT_TIME_SECONDS:-10}
-      IOT_QUEUE_VISIBILITY_TIMEOUT: ${IOT_QUEUE_VISIBILITY_TIMEOUT:-60}
-      IOT_QUEUE_BATCH_SIZE: ${IOT_QUEUE_BATCH_SIZE:-5}
-      IOT_QUEUE_IDLE_DELAY_MS: ${IOT_QUEUE_IDLE_DELAY_MS:-1000}
+      IOT_RECEIVE_MODE: ${IOT_RECEIVE_MODE:-mq}
+      RABBITMQ_QUEUE: ${RABBITMQ_QUEUE:-lumimax.q.biz.events}
+      IOT_DEVICE_OFFLINE_TIMEOUT: ${IOT_DEVICE_OFFLINE_TIMEOUT:-120}
+      IOT_DEVICE_OFFLINE_INTERVAL: ${IOT_DEVICE_OFFLINE_INTERVAL:-30000}
+      IOT_SERVICE_GRPC_ENDPOINT: iot-service:4140
     healthcheck:
       test:
         [
@@ -116,29 +136,80 @@ services:
     networks:
       - lumimax
 
-  gateway:
-    image: registry.cn-shenzhen.aliyuncs.com/ivlb/lumimax.api-gateway:${IMAGE_TAG:-latest}
-    container_name: lumimax-gateway
+  iot-service:
+    image: registry.cn-shenzhen.aliyuncs.com/ivlb/lumimax.api-iot:${IMAGE_TAG:-latest}
+    container_name: lumimax-iot-service
     restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      emqx:
+        condition: service_healthy
+      base-service:
+        condition: service_healthy
+    expose:
+      - '4040'
+      - '4140'
+    environment:
+      <<: [*common_env, *iot_transport_env]
+      SERVICE_NAME: iot-service
+      HOST: 0.0.0.0
+      HTTP_PORT: 4040
+      GRPC_PORT: 4140
+      BASE_SERVICE_GRPC_ENDPOINT: base-service:4120
+      IOT_DEVICE_OFFLINE_TIMEOUT: ${IOT_DEVICE_OFFLINE_TIMEOUT:-120}
+      IOT_DEVICE_OFFLINE_INTERVAL: ${IOT_DEVICE_OFFLINE_INTERVAL:-30000}
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "require('http').get('http://127.0.0.1:4040/health',res=>process.exit(res.statusCode===200?0:1)).on('error',()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    volumes:
+      - ../docker/emqx/certs:/app/certs/emqx:ro
+    networks:
+      - lumimax
+
+  gateway:
+    image: registry.cn-shenzhen.aliyuncs.com/ivlb/lumimax.api-gateway:${IMAGE_TAG:-latest}
+    container_name: lumimax-gateway
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
       base-service:
         condition: service_healthy
       biz-service:
+        condition: service_healthy
+      iot-service:
         condition: service_healthy
     ports:
       - '${GATEWAY_PORT:-4000}:4000'
     environment:
       <<: *common_env
+      SERVICE_NAME: gateway
       HOST: 0.0.0.0
       HTTP_PORT: 4000
-      BASE_SERVICE_URL: http://base-service:4020
       BASE_SERVICE_GRPC_ENDPOINT: base-service:4120
-      BIZ_SERVICE_URL: http://biz-service:4030
       BIZ_SERVICE_GRPC_ENDPOINT: biz-service:4130
+      IOT_SERVICE_GRPC_ENDPOINT: iot-service:4140
+      IOT_VENDOR: ${IOT_VENDOR:-emqx}
+      IOT_RECEIVE_MODE: ${IOT_RECEIVE_MODE:-mq}
+      EMQX_AUTH_SECRET: ${EMQX_AUTH_SECRET:-}
+      EMQX_MQTT_CLIENT_CERT_PEM_PATH: ${EMQX_MQTT_CLIENT_CERT_PEM_PATH:-/app/certs/emqx/iot-service.crt}
+      EMQX_MQTT_CLIENT_KEY_PEM_PATH: ${EMQX_MQTT_CLIENT_KEY_PEM_PATH:-/app/certs/emqx/iot-service.key}
+      EMQX_ROOT_CA_PEM_PATH: ${EMQX_ROOT_CA_PEM_PATH:-/app/certs/emqx/ca.crt}
+      EMQX_ROOT_CA_KEY_PEM_PATH: ${EMQX_ROOT_CA_KEY_PEM_PATH:-/app/certs/emqx/ca.key}
     healthcheck:
       test:
         [
@@ -151,6 +222,8 @@ services:
       timeout: 5s
       retries: 10
       start_period: 20s
+    volumes:
+      - ../docker/emqx/certs:/app/certs/emqx
     networks:
       - lumimax
 

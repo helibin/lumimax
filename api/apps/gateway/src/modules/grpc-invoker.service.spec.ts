@@ -14,7 +14,9 @@ function createEnvService(values: Record<string, number | undefined>) {
 function createLogger() {
   return {
     log() {},
+    debug() {},
     warn() {},
+    error() {},
   };
 }
 
@@ -74,4 +76,28 @@ test('GrpcInvokerService retries once for UNAVAILABLE and then succeeds', async 
 
   assert.deepEqual(result, { ok: true, attempts: 2 });
   assert.equal(attempts, 2);
+});
+
+test('GrpcInvokerService uses per-call timeout override when provided', async () => {
+  const service = new GrpcInvokerService(
+    createEnvService({
+      GATEWAY_GRPC_TIMEOUT_MS: 50,
+      GATEWAY_GRPC_RETRY_COUNT: 0,
+      GATEWAY_GRPC_RETRY_DELAY_MS: 0,
+    }) as any,
+    createLogger() as any,
+  );
+
+  const result = await service.invoke({
+    service: 'biz-service',
+    operation: 'meals.items.analyze',
+    requestId: '01h0000000000000000000103',
+    timeoutMs: 200,
+    call: async () => {
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      return { ok: true };
+    },
+  });
+
+  assert.deepEqual(result, { ok: true });
 });

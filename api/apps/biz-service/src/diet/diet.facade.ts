@@ -53,6 +53,7 @@ export class DietFacade {
           service: 'meals',
           method: input.method,
           payload: input.payload,
+          requestId: input.requestId,
         });
       case 'foods':
         return this.foodService.callAdmin<T>({
@@ -85,8 +86,8 @@ export class DietFacade {
     mealRecordId: string;
     userId: string;
     deviceId: string;
-    imageKey: string;
-    imageUrl?: string;
+    type: 'image' | 'barcode' | 'text' | 'voice';
+    target: string;
     weightGram: number;
     locale?: string;
     market?: string;
@@ -96,23 +97,24 @@ export class DietFacade {
       input.mealRecordId,
       input.userId,
     );
+    if (input.type === 'image') {
+      const preparedImage = await this.dietImageStorageService.prepareSingleImage({
+        requestId: input.requestId,
+        mealRecordId: input.mealRecordId,
+        imageKey: input.target,
+        userId: input.userId,
+        deviceId: input.deviceId,
+      });
 
-    const preparedImage = await this.dietImageStorageService.prepareSingleImage({
-      requestId: input.requestId,
-      mealRecordId: input.mealRecordId,
-      imageKey: input.imageKey,
-      userId: input.userId,
-      deviceId: input.deviceId,
-    });
+      return this.dietApplicationService.analyzeFoodItem({
+        ...input,
+        imageKey: preparedImage.imageKey,
+        imageUrl: preparedImage.readUrl,
+        imageObjectId: preparedImage.imageObjectKey,
+      });
+    }
 
-    const data = await this.dietApplicationService.analyzeFoodItem({
-      ...input,
-      imageKey: preparedImage.imageKey,
-      imageUrl: preparedImage.readUrl,
-      imageObjectId: preparedImage.imageObjectKey,
-    });
-
-    return data;
+    return this.dietApplicationService.analyzeFoodItem(input);
   }
 
   async finishMealRecord(input: {
@@ -178,7 +180,8 @@ export class DietFacade {
           mealRecordId,
           userId,
           deviceId: pickString(body.deviceId) ?? userId,
-          imageKey: sourceImageKey,
+          type: 'image',
+          target: sourceImageKey,
           weightGram,
           locale: pickString(body.locale),
           market: normalizeDietMarket(pickString(body.market)),

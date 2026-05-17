@@ -7,14 +7,18 @@ import { AdminNotificationController } from './proxy/admin-notification.controll
 import { AdminJwtGuard } from './auth/admin-jwt.guard';
 import { AdminPermissionGuard } from './auth/admin-permission.guard';
 import { AdminBusinessController } from './proxy/admin-business.controller';
+import { AdminDebugController } from './proxy/admin-debug.controller';
 import { AdminSystemController } from './system/admin-system.controller';
 import { AdminSystemSetupController } from './system/admin-system-setup.controller';
+import { AdminRabbitMqSetupService } from './system/admin-rabbitmq-setup.service';
+import { AdminEmqxCertSetupService } from './system/admin-emqx-cert-setup.service';
 
 @Module({
   imports: [AccessControlModule],
   controllers: [
     AdminAuthController,
     AdminBusinessController,
+    AdminDebugController,
     AdminNotificationController,
     AdminSystemController,
     AdminSystemSetupController,
@@ -22,6 +26,8 @@ import { AdminSystemSetupController } from './system/admin-system-setup.controll
   providers: [
     GrpcInvokerService,
     AdminAuthService,
+    AdminRabbitMqSetupService,
+    AdminEmqxCertSetupService,
     AdminJwtGuard,
     AdminPermissionGuard,
   ],

@@ -25,6 +25,7 @@ COPY pnpm-workspace.yaml pnpm-lock.yaml package.json turbo.json tsconfig.base.js
 COPY apps/gateway/package.json apps/gateway/package.json
 COPY apps/base-service/package.json apps/base-service/package.json
 COPY apps/biz-service/package.json apps/biz-service/package.json
+COPY apps/iot-service/package.json apps/iot-service/package.json
 
 COPY internal/auth/package.json internal/auth/package.json
 COPY internal/config/package.json internal/config/package.json

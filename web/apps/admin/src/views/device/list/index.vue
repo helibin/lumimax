@@ -4,21 +4,21 @@ import type { DeviceApi } from '#/api';
 
 import { ref } from 'vue';
 
-import { JsonViewer, Page, useVbenDrawer } from '@lumimax/common-ui';
+import { Page, useVbenDrawer } from '@lumimax/common-ui';
 import { Plus } from '@lumimax/icons';
 import { useAccessStore } from '@lumimax/stores';
 import { formatDateTime } from '@lumimax/utils';
 
-import { Button, Collapse, Descriptions, message, Modal } from 'ant-design-vue';
+import { Button, Descriptions, message, Modal } from 'ant-design-vue';
 
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
 import {
-  claimDeviceCertificateApi,
+  claimDeviceCredentialApi,
   deleteDeviceApi,
-  downloadDeviceCertificatePackageApi,
-  getDeviceCertificateApi,
+  downloadDeviceCredentialPackageApi,
+  getDeviceCredentialApi,
   getDeviceListApi,
-  rotateDeviceCertificateApi,
+  rotateDeviceCredentialApi,
 } from '#/api';
 import { $t } from '#/locales';
 
@@ -34,20 +34,20 @@ type DeviceActionClickParams = {
 };
 
 const accessStore = useAccessStore();
-const canViewDeviceCertificate =
+const canViewDeviceCredential =
   accessStore.accessCodes.includes('*') ||
-  accessStore.accessCodes.includes('device:certificate:view');
-const canRotateDeviceCertificate =
+  accessStore.accessCodes.includes('device:credential:view');
+const canRotateDeviceCredential =
   accessStore.accessCodes.includes('*') ||
-  accessStore.accessCodes.includes('device:certificate:rotate');
-const canDownloadDeviceCertificate =
+  accessStore.accessCodes.includes('device:credential:rotate');
+const canDownloadDeviceCredential =
   accessStore.accessCodes.includes('*') ||
-  accessStore.accessCodes.includes('device:certificate:download');
+  accessStore.accessCodes.includes('device:credential:download');
 
-const certificateVisible = ref(false);
-const certificateLoading = ref(false);
+const credentialVisible = ref(false);
+const credentialLoading = ref(false);
 const selectedDevice = ref<DeviceApi.DeviceItem | null>(null);
-const certificateDetail = ref<DeviceApi.DeviceCertificateDetail | null>(null);
+const credentialDetail = ref<DeviceApi.DeviceCredentialDetail | null>(null);
 
 const [CreateDrawer, createDrawerApi] = useVbenDrawer({
   connectedComponent: CreateForm,
@@ -76,7 +76,7 @@ const [Grid, gridApi] = useVbenVxeGrid({
   },
   gridOptions: {
     columns: useColumns(onActionClick, {
-      canViewCertificate: canViewDeviceCertificate,
+      canViewCredential: canViewDeviceCredential,
     }),
     height: 'auto',
     keepSource: true,
@@ -132,10 +132,10 @@ function onDetail(row: DeviceApi.DeviceItem) {
   detailDrawerApi.setData(row).open();
 }
 
-function onCertificate(row: DeviceApi.DeviceItem) {
+function onCredential(row: DeviceApi.DeviceItem) {
   selectedDevice.value = row;
-  certificateVisible.value = true;
-  void loadCertificate(row.id);
+  credentialVisible.value = true;
+  void loadCredential(row.id);
 }
 
 function onBind(row: DeviceApi.DeviceItem) {
@@ -171,8 +171,8 @@ function onActionClick({ code, row }: DeviceActionClickParams) {
       onBind(row);
       break;
     }
-    case 'certificate': {
-      onCertificate(row);
+    case 'credential': {
+      onCredential(row);
       break;
     }
     case 'command': {
@@ -194,18 +194,18 @@ function formatTime(value?: null | string) {
   return value ? formatDateTime(value) : '-';
 }
 
-function isCertificateRotationPending(detail: DeviceApi.DeviceCertificateDetail | null) {
+function isCredentialRotationPending(detail: DeviceApi.DeviceCredentialDetail | null) {
   const status = String(detail?.status ?? '')
     .trim()
     .toLowerCase();
   return status === 'rotate_requested' || status === 'rotating';
 }
 
-function isAliyunCredential(detail: DeviceApi.DeviceCertificateDetail | null) {
+function isAliyunCredential(detail: DeviceApi.DeviceCredentialDetail | null) {
   return (detail?.vendor ?? detail?.provider) === 'aliyun';
 }
 
-function credentialReference(detail: DeviceApi.DeviceCertificateDetail | null) {
+function credentialReference(detail: DeviceApi.DeviceCredentialDetail | null) {
   return detail?.credentialId || detail?.certificateArn || '-';
 }
 
@@ -229,11 +229,11 @@ function rotateCredentialConfirm() {
   return $t('device.rotateDeviceCredentialConfirm');
 }
 
-function certificateHelpText(detail: DeviceApi.DeviceCertificateDetail | null) {
+function credentialHelpText(detail: DeviceApi.DeviceCredentialDetail | null) {
   if (detail?.claimAvailable) {
     return $t('device.deviceCredentialHelp');
   }
-  if (isCertificateRotationPending(detail)) {
+  if (isCredentialRotationPending(detail)) {
     return $t('device.deviceCredentialRotationPendingHelp');
   }
   if (detail?.claimedAt) {
@@ -242,30 +242,30 @@ function certificateHelpText(detail: DeviceApi.DeviceCertificateDetail | null) {
   return $t('device.deviceCredentialUnavailableWithRotate');
 }
 
-async function loadCertificate(id: string) {
-  certificateLoading.value = true;
+async function loadCredential(id: string) {
+  credentialLoading.value = true;
   try {
-    certificateDetail.value = await getDeviceCertificateApi(id);
+    credentialDetail.value = await getDeviceCredentialApi(id);
   } finally {
-    certificateLoading.value = false;
+    credentialLoading.value = false;
   }
 }
 
-async function copyCertificatePem() {
+async function copyCredential() {
   const id = selectedDevice.value?.id;
-  if (!id || !certificateDetail.value?.claimAvailable) {
+  if (!id || !credentialDetail.value?.claimAvailable) {
     message.warning(
       $t('device.deviceCredentialUnavailable'),
     );
     return;
   }
   try {
-    const result = await claimDeviceCertificateApi(id);
+    const result = await claimDeviceCredentialApi(id);
     await navigator.clipboard.writeText(result.clipboardText);
     message.success(
       $t('device.deviceCredentialCopied'),
     );
-    await loadCertificate(id);
+    await loadCredential(id);
   } catch {
     message.error(
       $t('device.deviceCredentialClaimFailed'),
@@ -288,18 +288,18 @@ function triggerDownload(blob: Blob, fileName: string) {
   }
 }
 
-async function downloadCertificatePackage() {
+async function downloadCredentialPackage() {
   const id = selectedDevice.value?.id;
   if (!id) {
     return;
   }
   try {
-    const { blob, fileName } = await downloadDeviceCertificatePackageApi(id);
+    const { blob, fileName } = await downloadDeviceCredentialPackageApi(id);
     triggerDownload(blob, fileName);
     message.success(
       $t('device.deviceCredentialPackageDownloaded'),
     );
-    await loadCertificate(id);
+    await loadCredential(id);
   } catch {
     message.error(
       $t('device.deviceCredentialPackageDownloadFailed'),
@@ -307,7 +307,7 @@ async function downloadCertificatePackage() {
   }
 }
 
-async function rotateCertificate() {
+async function rotateCredential() {
   const id = selectedDevice.value?.id;
   if (!id) {
     return;
@@ -319,11 +319,11 @@ async function rotateCertificate() {
     cancelText: $t('common.cancel'),
     async onOk() {
       try {
-        await rotateDeviceCertificateApi(id, {});
+        await rotateDeviceCredentialApi(id, {});
         message.success(
           $t('device.rotateDeviceCredentialRequested'),
         );
-        await loadCertificate(id);
+        await loadCredential(id);
       } catch {
         message.error(
           $t('device.rotateDeviceCredentialFailed'),
@@ -333,8 +333,8 @@ async function rotateCertificate() {
   });
 }
 
-function onCertificateModalCancel() {
-  certificateDetail.value = null;
+function onCredentialModalCancel() {
+  credentialDetail.value = null;
   selectedDevice.value = null;
 }
 </script>
@@ -349,44 +349,44 @@ function onCertificateModalCancel() {
       <template #toolbar-tools>
         <Button type="primary" @click="onCreate">
           <Plus class="size-5" />
-          {{ $t('ui.actionTitle.create', [$t('device.name')]) }}
+          {{ $t('device.create') }}
         </Button>
       </template>
     </Grid>
     <Modal
-      v-model:open="certificateVisible"
+      v-model:open="credentialVisible"
       :title="`${credentialPanelTitle()} - ${selectedDevice?.name ?? ''}`"
       :footer="null"
       width="760px"
-      @cancel="onCertificateModalCancel"
+      @cancel="onCredentialModalCancel"
     >
       <div class="space-y-3">
         <div class="flex items-center justify-end gap-2">
           <Button
             size="small"
             type="default"
-            :disabled="!certificateDetail?.claimAvailable"
-            @click="copyCertificatePem"
+            :disabled="!credentialDetail?.claimAvailable"
+            @click="copyCredential"
           >
             {{ copyCredentialLabel() }}
           </Button>
           <Button
-            v-if="canDownloadDeviceCertificate"
+            v-if="canDownloadDeviceCredential"
             size="small"
             type="primary"
-            :disabled="!certificateDetail?.claimAvailable"
-            @click="downloadCertificatePackage"
+            :disabled="!credentialDetail?.claimAvailable"
+            @click="downloadCredentialPackage"
           >
             {{ downloadCredentialLabel() }}
           </Button>
           <Button
-            v-if="canRotateDeviceCertificate"
+            v-if="canRotateDeviceCredential"
             size="small"
             type="default"
-            @click="rotateCertificate"
+            @click="rotateCredential"
           >
             {{
-              certificateDetail?.available
+              credentialDetail?.available
                 ? $t('device.rotateCertificate')
                 : $t('device.rotateCertificateApply')
             }}
@@ -394,96 +394,89 @@ function onCertificateModalCancel() {
         </div>
         <Descriptions :column="2" bordered size="small">
           <Descriptions.Item :label="$t('device.certificateStatus')">
-            {{ certificateDetail?.status || '-' }}
+            {{ credentialDetail?.status || '-' }}
           </Descriptions.Item>
           <Descriptions.Item :label="$t('device.certificateSource')">
-            {{ certificateDetail?.source || '-' }}
+            {{ credentialDetail?.source || '-' }}
           </Descriptions.Item>
           <Descriptions.Item :label="$t('device.certificateVendor')">
-            {{ certificateDetail?.vendor || '-' }}
+            {{ credentialDetail?.vendor || '-' }}
           </Descriptions.Item>
           <Descriptions.Item :label="$t('device.certificateType')">
-            {{ certificateDetail?.credentialType || '-' }}
+            {{ credentialDetail?.credentialType || '-' }}
           </Descriptions.Item>
           <Descriptions.Item :label="$t('device.deviceProductKey')">
-            {{ certificateDetail?.productKey || '-' }}
+            {{ credentialDetail?.productKey || '-' }}
           </Descriptions.Item>
           <Descriptions.Item :label="$t('device.thingName')">
-            {{ certificateDetail?.thingName || '-' }}
+            {{ credentialDetail?.thingName || '-' }}
           </Descriptions.Item>
           <Descriptions.Item :label="$t('device.credentialReference')">
-            {{ credentialReference(certificateDetail) }}
+            {{ credentialReference(credentialDetail) }}
           </Descriptions.Item>
           <Descriptions.Item :label="$t('device.certificateRegion')">
-            {{ certificateDetail?.region || '-' }}
+            {{ credentialDetail?.region || '-' }}
           </Descriptions.Item>
           <Descriptions.Item :label="$t('device.certificateEndpoint')">
-            {{ certificateDetail?.endpoint || '-' }}
+            {{ credentialDetail?.endpoint || '-' }}
           </Descriptions.Item>
           <Descriptions.Item
             :label="
-              isAliyunCredential(certificateDetail)
+              isAliyunCredential(credentialDetail)
                 ? $t('device.deviceSecretAvailable')
                 : $t('device.certificateFingerprint')
             "
           >
             {{
-              isAliyunCredential(certificateDetail)
-                ? certificateDetail?.hasDeviceSecret
+              isAliyunCredential(credentialDetail)
+                ? credentialDetail?.hasDeviceSecret
                   ? $t('common.yes')
                   : $t('common.no')
-                : certificateDetail?.fingerprint || '-'
+                : credentialDetail?.fingerprint || '-'
             }}
           </Descriptions.Item>
           <Descriptions.Item
             :label="
-              isAliyunCredential(certificateDetail)
+              isAliyunCredential(credentialDetail)
                 ? $t('device.deviceSecretClaimed')
                 : $t('device.certificatePrivateKey')
             "
           >
             {{
-              isAliyunCredential(certificateDetail)
-                ? certificateDetail?.hasDeviceSecret
+              isAliyunCredential(credentialDetail)
+                ? credentialDetail?.hasDeviceSecret
                   ? $t('common.yes')
                   : $t('common.no')
-                : certificateDetail?.hasPrivateKey
+                : credentialDetail?.hasPrivateKey
                   ? $t('common.yes')
                   : $t('common.no')
             }}
           </Descriptions.Item>
           <Descriptions.Item
-            v-if="!isAliyunCredential(certificateDetail)"
+            v-if="!isAliyunCredential(credentialDetail)"
             :label="$t('device.certificateFingerprint')"
           >
-            {{ certificateDetail?.fingerprint || '-' }}
+            {{ credentialDetail?.fingerprint || '-' }}
           </Descriptions.Item>
           <Descriptions.Item
-            v-if="!isAliyunCredential(certificateDetail)"
+            v-if="!isAliyunCredential(credentialDetail)"
             :label="$t('device.certificatePrivateKey')"
           >
-            {{ certificateDetail?.hasPrivateKey ? $t('common.yes') : $t('common.no') }}
+            {{ credentialDetail?.hasPrivateKey ? $t('common.yes') : $t('common.no') }}
           </Descriptions.Item>
           <Descriptions.Item :label="$t('device.certificateIssuedAt')">
-            {{ formatTime(certificateDetail?.issuedAt) }}
+            {{ formatTime(credentialDetail?.issuedAt) }}
           </Descriptions.Item>
           <Descriptions.Item :label="$t('device.certificateUpdatedAt')">
-            {{ formatTime(certificateDetail?.updatedAt) }}
+            {{ formatTime(credentialDetail?.updatedAt) }}
           </Descriptions.Item>
           <Descriptions.Item :label="$t('device.certificateClaimedAt')">
-            {{ formatTime(certificateDetail?.claimedAt) }}
+            {{ formatTime(credentialDetail?.claimedAt) }}
           </Descriptions.Item>
         </Descriptions>
         <div class="text-xs text-text-secondary">
-          {{ certificateHelpText(certificateDetail) }}
+          {{ credentialHelpText(credentialDetail) }}
         </div>
-        <Collapse v-if="!certificateLoading" ghost>
-          <Collapse.Panel key="raw-json" :header="$t('device.rawCredentialPayload')">
-            <div class="max-h-56 overflow-y-auto">
-              <JsonViewer :value="certificateDetail ?? {}" boxed copyable preview-mode />
-            </div>
-          </Collapse.Panel>
-        </Collapse>
       </div>
     </Modal>
   </Page>

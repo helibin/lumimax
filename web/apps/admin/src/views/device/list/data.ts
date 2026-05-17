@@ -68,13 +68,13 @@ export function getDeviceCommandStatusOptions() {
 export function useColumns(
   onActionClick: DeviceActionClickFn,
   options: {
-    canViewCertificate: boolean;
+    canViewCredential: boolean;
   },
 ): VxeTableGridColumns<DeviceApi.DeviceItem> {
   const operationOptions: Array<any> = [{ code: 'detail', text: $t('device.detail') }];
-  if (options.canViewCertificate) {
+  if (options.canViewCredential) {
     operationOptions.push({
-      code: 'certificate',
+      code: 'credential',
       text: $t('device.viewCertificateInfo'),
     });
   }

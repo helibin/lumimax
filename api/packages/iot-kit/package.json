@@ -1,0 +1,28 @@
+{
+  "name": "@lumimax/iot-kit",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && rm -rf dist && mkdir -p dist && cp -R ../../dist/packages/iot-kit/. dist",
+    "dev": "pnpm run build",
+    "lint": "eslint src --ext .ts",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@lumimax/config": "workspace:*",
+    "@lumimax/logger": "workspace:*",
+    "@lumimax/runtime": "workspace:*",
+    "@nestjs/common": "catalog:",
+    "mqtt": "catalog:",
+    "undici": "^6.21.3"
+  }
+}

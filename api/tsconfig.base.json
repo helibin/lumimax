@@ -31,6 +31,8 @@
       "@lumimax/mq/*": ["packages/mq/src/*"],
       "@lumimax/http-kit": ["packages/http-kit/src"],
       "@lumimax/http-kit/*": ["packages/http-kit/src/*"],
+      "@lumimax/iot-kit": ["packages/iot-kit/src"],
+      "@lumimax/iot-kit/*": ["packages/iot-kit/src/*"],
       "@lumimax/validation": ["packages/validation/src"],
       "@lumimax/validation/*": ["packages/validation/src/*"],
       "@lumimax/crypto-utils": ["packages/crypto-utils/src"],

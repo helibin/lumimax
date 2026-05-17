@@ -75,6 +75,8 @@ export class AdminApplicationService {
         });
       case 'auth.GetMe':
         return this.getMe(payload, tenantId);
+      case 'auth.ValidateSession':
+        return this.validateSession(payload, tenantId);
       case 'accounts.ListAdminUsers':
         return this.listAdminUsers(payload, tenantId);
       case 'accounts.GetAdminUser':
@@ -180,12 +182,24 @@ export class AdminApplicationService {
   ): Promise<Record<string, unknown>> {
     const adminId = pickString(payload.admin_id) ?? pickString(payload.adminId);
     if (!adminId) {
-      throw new Error('admin id is required');
+      throw new BadRequestException('admin id is required');
     }
-    const admin = await this.mustGetAdmin(adminId, tenantId);
+    const admin = await this.mustGetActiveAdmin(adminId, tenantId);
     return {
       user: await this.buildAdminProfile(admin, tenantId),
     };
+  }
+
+  private async validateSession(
+    payload: Record<string, unknown>,
+    tenantId?: string,
+  ): Promise<Record<string, unknown>> {
+    const adminId = pickString(payload.admin_id) ?? pickString(payload.adminId);
+    if (!adminId) {
+      throw new BadRequestException('admin id is required');
+    }
+    await this.mustGetActiveAdmin(adminId, tenantId);
+    return { ok: true };
   }
 
   private async listAdminUsers(
@@ -398,6 +412,19 @@ export class AdminApplicationService {
     });
     if (!admin) {
       throw new Error(`admin user not found: ${id}`);
+    }
+    return admin;
+  }
+
+  private async mustGetActiveAdmin(id: string, tenantId?: string): Promise<SystemAdminEntity> {
+    const admin = await this.adminRepository.findOne({
+      where: tenantId ? { id, tenantId } : { id },
+    });
+    if (!admin) {
+      throw new UnauthorizedException('admin session expired');
+    }
+    if (admin.status !== 'active') {
+      throw new UnauthorizedException('admin account disabled');
     }
     return admin;
   }

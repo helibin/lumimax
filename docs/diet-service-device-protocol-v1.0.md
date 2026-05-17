@@ -162,9 +162,10 @@ connect.register
   },
   "data": {
     "mealRecordId": "01hx0000000000000000000000000002",
+    "type": "image",
+    "target": "tmp-file/device/SN_12345/20260424/food-001.jpg",
     "weight": 123.5,
     "unit": "g",
-    "imageKey": "tmp-file/device/SN_12345/20260424/food-001.jpg",
     "measuredAt": 1710000010000
   }
 }
@@ -173,7 +174,8 @@ connect.register
 说明：
 
 - `weight` 采用克重优先
-- `imageKey` 可空，手输/语音场景不强依赖图片
+- `type` 支持 `image | barcode | text | voice`，默认 `image`
+- `target` 表示本次识别目标；图片传 object key，条码传条码值，文本/语音传文本内容
 - 服务端按设备 `market` 选择识别与营养路由
 
 ### 7.2 响应
@@ -193,68 +195,47 @@ connect.register
     "mealRecordId": "01hx0000000000000000000000000002",
     "foodItemId": "01hx0000000000000000000000000003",
     "status": "success",
-    "weight": 123.5,
-    "unit": "g",
-    "items": [
-      {
-        "foodId": "F_BOOHEE_RICE",
-        "type": "ingredient",
-        "name": "rice",
-        "displayName": "米饭",
-        "canonicalName": "rice",
-        "quantity": 1,
-        "measuredWeightGram": 123.5,
-        "estimatedWeightGram": 123.5,
+    "food": {
+      "id": "01hx0000000000000000000000000003",
+      "type": "ingredient",
+      "name": "rice",
+      "displayName": "米饭",
+      "canonicalName": "rice",
+      "quantity": 1,
+      "weightGram": 123.5,
+      "estimatedWeightGram": 123.5,
+      "nutrition": {
         "calories": 143,
-        "nutrition": {
-          "protein": 2.9,
-          "fat": 0.4,
-          "carbohydrate": 31.2,
-          "fiber": 0.3
-        },
-        "provider": "boohee",
-        "source": "boohee",
-        "verifiedLevel": "verified",
-        "confidence": 0.94,
-        "children": []
-      }
-    ],
-    "estimatedNutrition": {
-      "calories": 143,
-      "protein": 2.9,
-      "fat": 0.4,
-      "carbs": 31.2,
+        "protein": 2.9,
+        "fat": 0.4,
+        "carbs": 31.2,
+        "fiber": 0.3
+      },
       "provider": "boohee",
       "source": "boohee",
-      "verifiedLevel": "verified"
+      "verifiedLevel": "verified",
+      "confidence": 0.94,
+      "children": []
     },
-    "requiresUserConfirmation": true,
-    "confirmationOptions": [
+    "candidates": [
       {
-        "optionId": "accept",
-        "label": "直接确认"
-      },
-      {
-        "optionId": "chooseFromUserCommon",
-        "label": "常吃类似食物"
-      },
-      {
-        "optionId": "searchSystemFoods",
-        "label": "系统食物库搜索"
-      },
-      {
-        "optionId": "retryRecognition",
-        "label": "重新识别"
+        "optionId": "recognized:rice",
+        "foodName": "rice",
+        "displayName": "米饭",
+        "canonicalName": "rice",
+        "source": "recognized",
+        "provider": "vision",
+        "confidence": 0.94
       }
     ],
-    "userCommonCandidates": []
+    "requiresUserConfirmation": true
   }
 }
 ```
 
 ### 7.3 关键字段
 
-`items[]` 每项至少包含：
+`food` 至少包含：
 
 | 字段 | 说明 |
 | --- | --- |
@@ -262,9 +243,8 @@ connect.register
 | `name` | 原始名称 |
 | `displayName` | 本地化展示名称 |
 | `quantity` | 数量/份数 |
-| `measuredWeightGram` | 实际称重 |
+| `weightGram` | 实际称重 |
 | `estimatedWeightGram` | 模型估重 |
-| `calories` | 当前项热量 |
 | `nutrition` | 当前项营养 |
 | `provider` | 营养命中来源 |
 | `verifiedLevel` | `confirmed / verified / estimated / unverified` |
@@ -272,10 +252,9 @@ connect.register
 
 顶层补充：
 
-- `estimatedNutrition`：本次识别项聚合营养
+- `candidates`：设备端直接展示的候选项
 - `requiresUserConfirmation`：是否必须确认
-- `confirmationOptions`：固定顺序返回确认动作
-- `userCommonCandidates`：用户常吃类似食物候选
+- `mealTotal`：当前餐次累计汇总（可选）
 
 ---
 

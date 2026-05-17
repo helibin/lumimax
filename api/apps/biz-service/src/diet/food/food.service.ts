@@ -102,8 +102,14 @@ export class FoodService {
 
     switch (input.method) {
       case 'ListFoods': {
+        const keyword = pickString(input.payload?.keyword);
         const [foods, total] = await this.foodRepository.findAndCount({
-          where: { tenantId: input.tenantId },
+          where: keyword
+            ? [
+                { tenantId: input.tenantId, name: ILike(`%${keyword}%`) },
+                { tenantId: input.tenantId, brand: ILike(`%${keyword}%`) },
+              ]
+            : { tenantId: input.tenantId },
           order: { createdAt: 'DESC' },
           skip: (page - 1) * pageSize,
           take: pageSize,
@@ -142,6 +148,21 @@ export class FoodService {
         const id = String(input.payload?.id ?? '').trim();
         const body = parseBodyPayload(input.payload?.body_json);
         return (await this.updateFoodStatus(id, body, input.tenantId, input.requestId)) as T;
+      }
+      case 'ListUserCommonFoods': {
+        const listed = await this.userFoodProfileService.listAdminUserCommonFoods({
+          tenantId: input.tenantId,
+          page,
+          pageSize,
+          keyword: pickString(input.payload?.keyword),
+          userId: pickString(input.payload?.userId),
+        });
+        return this.paginate<T>(
+          listed.items.map((item) => ({ ...item })),
+          page,
+          pageSize,
+          listed.total,
+        );
       }
       default:
         throw new Error(`Unsupported food admin method: ${input.method}`);
@@ -320,6 +341,8 @@ export class FoodService {
       servingSize: pickNumber(extra.servingSize) ?? 100,
       servingUnit: pickString(extra.servingUnit) ?? 'g',
       status: food.status,
+      createdAt: food.createdAt?.toISOString() ?? null,
+      updatedAt: food.updatedAt?.toISOString() ?? null,
     };
   }
 }

@@ -1,89 +1,123 @@
-import type { DynamicModule } from '@nestjs/common';
+import type {
+  DynamicModule,
+  FactoryProvider,
+  InjectionToken,
+  ModuleMetadata,
+  OptionalFactoryDependency,
+} from '@nestjs/common';
 import { Module } from '@nestjs/common';
-import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ClientProxyFactory, Transport } from '@nestjs/microservices';
 import {
   RABBITMQ_CLIENT,
-  RABBITMQ_DEFAULT_EVENTS_EXCHANGE,
-  RABBITMQ_DEFAULT_EVENTS_EXCHANGE_TYPE,
-  RABBITMQ_DEFAULT_PUBLISHER_QUEUE_SUFFIX,
-  RABBITMQ_DEFAULT_URL,
 } from './rabbitmq.constants';
+import {
+  RABBITMQ_PROFILE,
+  type RabbitMQProfileOptions,
+  resolveRabbitMQProfile,
+} from './rabbitmq.profile';
+import { RabbitMQConfirmPublisherService } from './rabbitmq-confirm-publisher.service';
 import { RabbitMQIdempotencyService } from './rabbitmq-idempotency.service';
 import { RabbitMQService } from './rabbitmq.service';
 
-export interface RabbitMQModuleOptions {
-  queue?: string;
-  exchange?: string;
-  exchangeType?: 'direct' | 'fanout' | 'topic' | 'headers' | (string & {});
-  wildcards?: boolean;
+export interface RabbitMQModuleOptions extends RabbitMQProfileOptions {
   queueOptions?: {
     durable?: boolean;
+    arguments?: Record<string, unknown>;
   };
+  wildcards?: boolean;
 }
+
+export interface RabbitMQModuleAsyncOptions
+  extends Pick<ModuleMetadata, 'imports'> {
+  inject?: Array<InjectionToken | OptionalFactoryDependency>;
+  useFactory: (...args: any[]) => RabbitMQModuleOptions | Promise<RabbitMQModuleOptions>;
+}
+
+const RABBITMQ_MODULE_OPTIONS = 'RABBITMQ_MODULE_OPTIONS';
 
 @Module({})
 export class RabbitMQModule {
-  static forRoot(options: RabbitMQModuleOptions = {}): DynamicModule {
-    return {
-      module: RabbitMQModule,
-      imports: [ConfigModule],
+  static forRoot(options: RabbitMQModuleAsyncOptions): DynamicModule {
+    return this.createDynamicModule({
+      imports: options.imports,
       providers: [
         {
+          provide: RABBITMQ_MODULE_OPTIONS,
+          inject: options.inject ?? [],
+          useFactory: options.useFactory,
+        },
+      ],
+    });
+  }
+
+  private static createDynamicModule({
+    imports,
+    providers,
+  }: {
+    imports?: ModuleMetadata['imports'];
+    providers: FactoryProvider[];
+  }): DynamicModule {
+    return {
+      module: RabbitMQModule,
+      imports,
+      providers: [
+        ...providers,
+        {
+          provide: RABBITMQ_PROFILE,
+          inject: [RABBITMQ_MODULE_OPTIONS],
+          useFactory: (options: RabbitMQModuleOptions) =>
+            resolveRabbitMQProfile({
+              url: options.url,
+              exchange: options.exchange,
+              exchangeType: options.exchangeType,
+              queue: options.queue,
+              queueArguments: options.queueArguments ?? options.queueOptions?.arguments,
+            }),
+        },
+        {
           provide: RABBITMQ_CLIENT,
-          inject: [ConfigService],
-          useFactory: (configService: ConfigService) => {
-            const url =
-              configService.get<string>('RABBITMQ_URL') ??
-              RABBITMQ_DEFAULT_URL;
-            const exchange =
-              options.exchange
-              ?? configService.get<string>('RABBITMQ_EVENTS_EXCHANGE')
-              ?? RABBITMQ_DEFAULT_EVENTS_EXCHANGE;
-            const exchangeType =
-              options.exchangeType
-              ?? (configService.get<string>('RABBITMQ_EVENTS_EXCHANGE_TYPE') as
-                | 'direct'
-                | 'fanout'
-                | 'topic'
-                | 'headers'
-                | (string & {})
-                | undefined)
-              ?? RABBITMQ_DEFAULT_EVENTS_EXCHANGE_TYPE;
-            const queue = options.queue ?? resolvePublisherQueue(configService);
+          inject: [RABBITMQ_MODULE_OPTIONS, RABBITMQ_PROFILE],
+          useFactory: (
+            options: RabbitMQModuleOptions,
+            profile: ReturnType<typeof resolveRabbitMQProfile>,
+          ) => {
             return ClientProxyFactory.create({
               transport: Transport.RMQ,
               options: {
-                urls: [url],
-                queue,
-                exchange,
-                exchangeType,
+                urls: [profile.url],
+                queue: profile.queue,
+                exchange: profile.exchange,
+                exchangeType: profile.exchangeType,
                 wildcards: options.wildcards ?? true,
                 queueOptions: {
                   durable: options.queueOptions?.durable ?? true,
+                  ...queueArgumentsToNestOptions(
+                    options.queueArguments ?? options.queueOptions?.arguments,
+                  ),
                 },
               },
             });
           },
         },
         RabbitMQIdempotencyService,
+        RabbitMQConfirmPublisherService,
         RabbitMQService,
       ],
-      exports: [RabbitMQService, RabbitMQIdempotencyService, RABBITMQ_CLIENT],
+      exports: [
+        RabbitMQService,
+        RabbitMQIdempotencyService,
+        RabbitMQConfirmPublisherService,
+        RABBITMQ_CLIENT,
+      ],
     };
   }
 }
 
-function resolvePublisherQueue(configService: ConfigService): string {
-  const configuredQueue = configService.get<string>('RABBITMQ_PUBLISHER_QUEUE');
-  if (configuredQueue && configuredQueue.trim().length > 0) {
-    return configuredQueue.trim();
+function queueArgumentsToNestOptions(
+  args: Record<string, unknown> | undefined,
+): { arguments?: Record<string, unknown> } {
+  if (!args || Object.keys(args).length === 0) {
+    return {};
   }
-
-  const serviceName =
-    configService.get<string>('SERVICE_NAME')
-    ?? configService.get<string>('npm_package_name')
-    ?? 'app';
-  const normalized = serviceName.replace(/^@[^/]+\//, '').replace(/\s+/g, '-');
-  return `${normalized}${RABBITMQ_DEFAULT_PUBLISHER_QUEUE_SUFFIX}`;
+  return { arguments: args };
 }

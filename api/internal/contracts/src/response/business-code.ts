@@ -27,6 +27,13 @@ export type BusinessErrorKey =
   | 'resource.conflict'
   | 'request.too_many'
   | 'request.unprocessable'
+  | 'iot.topic_invalid'
+  | 'iot.topic_forbidden'
+  | 'iot.device_not_found'
+  | 'iot.device_connection_disabled'
+  | 'iot.credential_not_matched'
+  | 'iot.credential_inactive'
+  | 'iot.emqx_queue_mode_http_ingest_disabled'
   | 'upstream.unavailable'
   | 'upstream.timeout'
   | 'system.internal_error';
@@ -50,6 +57,14 @@ export enum BusinessCode {
   RESOURCE_CONFLICT = 40901,
   REQUEST_TOO_MANY = 42901,
   REQUEST_UNPROCESSABLE = 42201,
+  IOT_TOPIC_INVALID = 42210,
+  IOT_TOPIC_FORBIDDEN = 40310,
+  IOT_DEVICE_NOT_FOUND = 40410,
+  IOT_DEVICE_CONNECTION_DISABLED = 40311,
+  IOT_CREDENTIAL_NOT_MATCHED = 40312,
+  IOT_CREDENTIAL_INACTIVE = 40313,
+  /** EMQX + mq mode: HTTP/gRPC uplink ingest disabled (use RabbitMQ bridge only). */
+  IOT_EMQX_QUEUE_MODE_HTTP_INGEST_DISABLED = 40911,
   UPSTREAM_UNAVAILABLE = 50301,
   UPSTREAM_TIMEOUT = 50401,
   INTERNAL_ERROR = 50000,
@@ -124,6 +139,20 @@ export function mapExceptionToBusinessError(exception: unknown): BusinessError {
     };
   }
   if (exception instanceof ConflictException) {
+    const response = exception.getResponse();
+    if (isRecord(response)) {
+      const embeddedCode = readNumericCode(response.businessCode ?? response.code);
+      const embeddedKey = typeof response.key === 'string' ? response.key : undefined;
+      if (
+        embeddedCode === BusinessCode.IOT_EMQX_QUEUE_MODE_HTTP_INGEST_DISABLED
+        && embeddedKey === 'iot.emqx_queue_mode_http_ingest_disabled'
+      ) {
+        return {
+          code: BusinessCode.IOT_EMQX_QUEUE_MODE_HTTP_INGEST_DISABLED,
+          key: 'iot.emqx_queue_mode_http_ingest_disabled',
+        };
+      }
+    }
     return {
       code: BusinessCode.RESOURCE_CONFLICT,
       key: 'resource.conflict',
@@ -364,4 +393,19 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function readNumericCode(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
 }

@@ -1,22 +1,25 @@
 # EMQX Medium Plan Master
 
+> **2026-05 现状**：Phase B 已落地为独立 **`apps/iot-service`**（传输）+ **`biz-service/src/iot`**（领域 ingest）。下文「三逻辑域在 biz 内」为历史拆分叙述；实现路径以 [`docs/IoT通讯模块规范.md`](../IoT通讯模块规范.md) v1.4 为准。
+
 ## Goal
 
 Build a medium-complexity EMQX integration plan that replaces the AWS IoT Core access layer while staying compatible with the current Lumimax repository constraints.
 
 ## Important Repository Constraint
 
-The current repo rule in `api/AGENTS.md` keeps the runtime as:
+The current repo runtime (`api/AGENTS.md`) is **four services**:
 
 1. `gateway`
 2. `base-service`
 3. `biz-service`
+4. `iot-service`
 
-So this plan uses **three logical backend domains** first, not three immediately separate deployable apps:
+Logical domains map as:
 
-1. `device-service` domain -> implemented inside `biz-service/src/device`
-2. `pki-service` domain -> implemented inside `biz-service/src/iot/providers/emqx` and related certificate modules
-3. `iot-access-service` domain -> implemented inside `biz-service/src/iot`
+1. `device-service` domain -> `biz-service/src/device`
+2. `pki-service` domain -> `biz-service/src/device/identity`（EMQX/AWS 证书）
+3. `iot-access-service` domain -> **`iot-service`**（ingress + bridge + 下行）+ **`biz-service/src/iot`**（ingest/dispatcher）
 
 Later, each domain can be split into an independent microservice with minimal contract churn.
 
@@ -63,8 +66,8 @@ Close the loop with telemetry, downlink, and observability.
 To avoid clashing with the current repo rule, implement the "three services" as three internal domains first:
 
 1. `biz-service/src/device` -> `device-service` domain
-2. `biz-service/src/iot` -> `iot-access-service` domain
-3. `biz-service/src/iot/providers/emqx` plus certificate orchestration -> `pki-service` domain
+2. `iot-service` + `biz-service/src/iot` -> `iot-access-service` domain
+3. `biz-service/src/device/identity` plus EMQX/AWS cert utils -> `pki-service` domain
 
 Keep interfaces stable so they can later move into separate deployables.
 
@@ -74,7 +77,7 @@ Keep interfaces stable so they can later move into separate deployables.
 
 Ownership:
 
-- `apps/biz-service/src/iot/**`
+- `apps/iot-service/**`、`apps/biz-service/src/iot/**`
 - `internal/contracts/src/iot/**`
 
 Deliver:
@@ -102,7 +105,7 @@ Deliver:
 
 Ownership:
 
-- `apps/biz-service/src/iot/providers/emqx/**`
+- `apps/biz-service/src/device/identity/**`
 - certificate package utilities
 - certificate issuance/rotation orchestration
 

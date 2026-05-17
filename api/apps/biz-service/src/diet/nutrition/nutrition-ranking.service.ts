@@ -62,11 +62,14 @@ export class NutritionRankingService {
 
 const providerTrust: Record<string, number> = {
   user_common: 0.98,
+  internal: 0.9,
   'local-db': 0.9,
-  nutritionix: 0.8,
+  usda: 0.82,
   usda_fdc: 0.82,
-  open_food_facts: 0.74,
+  boohee: 0.78,
   edamam: 0.76,
+  vision: 0.7,
+  llm_estimate: 0.45,
   llm_estimator: 0.45,
   'fallback-catalog': 0.3,
 };

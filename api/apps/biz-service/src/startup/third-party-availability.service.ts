@@ -7,7 +7,7 @@ import { getDefaultDietMarket, type DietMarket, DIET_MARKET_VALUES } from '../di
 import {
   DIET_ROUTE_MARKET_ORDER,
   listRouteProviderNamesForMarket,
-} from '../diet/nutrition/nutrition-provider-router.service';
+} from '../diet/food-query/provider-route-config.util';
 
 export type ThirdPartyProbeStatus = 'up' | 'down' | 'skipped';
 
@@ -171,23 +171,26 @@ export class ThirdPartyAvailabilityService implements OnModuleInit {
   ): { name: string; url: string; staticDetail?: string; markets: DietMarket[]; scope: 'market' } | undefined {
     switch (providerName) {
       case 'boohee':
-        return {
-          name: 'boohee (cn realtime slot)',
-          url: '',
-          staticDetail: '暂未接入',
-          markets,
-          scope: 'market',
-        };
-      case 'nutritionix':
-        if (hasNutritionixConfig()) {
+        if (
+          hasValue(getEnvString('BOOHEE_BASE_URL', '')!)
+          && hasValue(getEnvString('BOOHEE_APP_ID', '')!)
+          && hasValue(getEnvString('BOOHEE_APP_KEY', '')!)
+        ) {
           return {
-            name: 'nutritionix',
-            url: normalizeProbeUrl(getEnvString('NUTRITIONIX_BASE_URL', 'https://trackapi.nutritionix.com')!),
+            name: 'boohee',
+            url: normalizeProbeUrl(getEnvString('BOOHEE_BASE_URL', '')!),
             markets,
             scope: 'market',
           };
         }
-        return undefined;
+        return {
+          name: 'boohee',
+          url: '',
+          staticDetail: '未配置 BOOHEE_BASE_URL / BOOHEE_APP_ID / BOOHEE_APP_KEY',
+          markets,
+          scope: 'market',
+        };
+      case 'usda':
       case 'usda_fdc':
         if (hasValue(getEnvString('USDA_FDC_API_KEY', '')!)) {
           return {
@@ -277,11 +280,6 @@ function isStartupCheckStrict(): boolean {
 
 function getStartupCheckTimeoutMs(): number {
   return getEnvNumber('STARTUP_THIRD_PARTY_CHECK_TIMEOUT_MS', 5000);
-}
-
-function hasNutritionixConfig(): boolean {
-  return hasValue(getEnvString('NUTRITIONIX_APP_ID', '')!)
-    && hasValue(getEnvString('NUTRITIONIX_API_KEY', '')!);
 }
 
 function hasValue(value: string): boolean {

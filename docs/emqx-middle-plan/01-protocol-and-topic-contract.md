@@ -272,6 +272,8 @@ Classes:
 - system/utility:
   - `upload.token.request`
   - `upload.token.result`
+  - `upload.url.request`
+  - `upload.url.result`
   - `attr.set`
   - `attr.set.result`
   - `cmd.ota.upgrade`
@@ -297,6 +299,7 @@ This section prevents event routing ambiguity.
 | `connect.register` | `up/events` | `device-service` | registration handshake, firmware/model snapshot |
 | `status.heartbeat` | `up/status` | `device-service` | updates online state and last seen |
 | `upload.token.request` | `up/system` | `device-service` | may delegate to storage service later |
+| `upload.url.request` | `up/system` | `device-service` | requests presigned upload URL |
 | `attr.set.result` | `up/acks` | `device-service` | device applied cloud attributes |
 | `cmd.ota.upgrade.accepted` | `up/acks` | `device-service` | command state tracking |
 | `cmd.ota.upgrade.progress` | `up/acks` | `device-service` | command progress tracking |

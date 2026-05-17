@@ -55,6 +55,21 @@ export class AdminAuthService {
     return { accessToken, user };
   }
 
+  async validateSession(input: { requestId: string; adminId: string }): Promise<void> {
+    await this.grpcInvoker.invoke<{ ok?: boolean }>({
+      requestId: input.requestId,
+      service: 'base-service',
+      operation: 'admin.auth.validate-session',
+      call: () =>
+        this.baseSystemAdminGrpcAdapter.call<{ ok?: boolean }>(
+          'auth',
+          'ValidateSession',
+          { admin_id: input.adminId },
+          input.requestId,
+        ),
+    });
+  }
+
   async me(input: { requestId: string; adminId: string }): Promise<Record<string, unknown>> {
     const reply = await this.grpcInvoker.invoke<{ user: AdminProfile }>({
       requestId: input.requestId,

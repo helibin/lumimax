@@ -53,6 +53,7 @@ export const iotEventSchemas: Record<string, JsonSchema> = {
   'connect.register': byEvent('connect.register'),
   'status.heartbeat': byEvent('status.heartbeat'),
   'upload.token.request': byEvent('upload.token.request'),
+  'upload.url.request': byEvent('upload.url.request'),
   'attr.set.result': byEvent('attr.set.result'),
   'cmd.ota.upgrade.accepted': byEvent('cmd.ota.upgrade.accepted'),
   'cmd.ota.upgrade.progress': byEvent('cmd.ota.upgrade.progress'),

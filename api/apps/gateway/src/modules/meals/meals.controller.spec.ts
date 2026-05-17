@@ -30,6 +30,7 @@ function createController() {
       service: string;
       operation: string;
       requestId?: string;
+      timeoutMs?: number;
       call: () => Promise<unknown>;
     }) {
       const callResult = await input.call();
@@ -53,7 +54,13 @@ function createController() {
     },
   };
 
-  const controller = new MealsController(grpcInvoker as any, bizDietGrpcAdapter as any);
+  const envService = {
+    getNumber(_key: string, fallback: number) {
+      return fallback;
+    },
+  };
+
+  const controller = new MealsController(envService as any, grpcInvoker as any, bizDietGrpcAdapter as any);
   return { controller, invocations, adapterCalls };
 }
 

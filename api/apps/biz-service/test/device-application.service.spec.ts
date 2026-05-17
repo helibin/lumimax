@@ -98,7 +98,12 @@ function createService(deviceRepository: Record<string, unknown>) {
     {} as never,
     {} as never,
     {} as never,
-    { appendBinding: async () => undefined, closeActiveBinding: async () => undefined } as never,
+    {
+      appendBinding: async () => undefined,
+      closeActiveBinding: async () => undefined,
+      closeActiveBindings: async () => undefined,
+      deleteAllBindings: async () => undefined,
+    } as never,
     {} as never,
     {} as never,
     {} as never,
@@ -200,7 +205,8 @@ test('admin.devices.list supports filtering unbound devices', async () => {
   );
 });
 
-test('admin.devices.create rejects duplicate deviceSn', async () => {
+test('admin.devices.create reuses existing active device for duplicate deviceSn', async () => {
+  let provisionCalls = 0;
   const service = createService({
     createQueryBuilder() {
       throw new Error('not used in this test');
@@ -210,6 +216,12 @@ test('admin.devices.create rejects duplicate deviceSn', async () => {
         id: '01h0000000000000000000309',
         tenantId: '01h0000000000000000000011',
         deviceSn: 'SN-DUPLICATED',
+        productKey: 'smart-scale',
+        provider: 'emqx',
+        status: 'active',
+        onlineStatus: 'offline',
+        createdAt: new Date('2026-05-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-05-01T00:00:00.000Z'),
         deletedAt: null,
       };
     },
@@ -230,16 +242,92 @@ test('admin.devices.create rejects duplicate deviceSn', async () => {
     },
   });
 
-  await assert.rejects(
-    () =>
-      service.execute({
-        operation: 'admin.devices.create',
-        body: { deviceSn: 'SN-DUPLICATED' },
-        tenantScope: '01h0000000000000000000011',
-        requestId: '01h0000000000000000000103',
-      }),
-    /deviceSn already exists: SN-DUPLICATED/,
-  );
+  (service as any).deviceIdentityService = {
+    async provisionOnDeviceCreated() {
+      provisionCalls += 1;
+      return { ok: true };
+    },
+  };
+
+  const result = await service.execute({
+    operation: 'admin.devices.create',
+    body: { deviceSn: 'SN-DUPLICATED' },
+    tenantScope: '01h0000000000000000000011',
+    requestId: '01h0000000000000000000103',
+  });
+
+  assert.equal((result as Record<string, any>).deviceSn, 'SN-DUPLICATED');
+  assert.equal((result as Record<string, any>).iotProvision?.skipped, true);
+  assert.equal((result as Record<string, any>).iotProvision?.status, 'existing');
+  assert.equal(provisionCalls, 0);
+});
+
+test('admin.devices.create updates reused device when provider changed and reprovisions iot', async () => {
+  let provisionCalls = 0;
+  const savedSnapshots: Array<Record<string, unknown>> = [];
+  const service = createService({
+    createQueryBuilder() {
+      throw new Error('not used in this test');
+    },
+    async findOne() {
+      return {
+        id: '01h0000000000000000000310',
+        tenantId: '01h0000000000000000000011',
+        name: 'legacy-device',
+        deviceSn: 'SN-EMQX-UPGRADE',
+        productKey: 'smart-scale',
+        provider: 'aws',
+        status: 'inactive',
+        onlineStatus: 'offline',
+        boundUserId: null,
+        locale: 'en-US',
+        market: 'US',
+        lastSeenAt: new Date('2026-04-01T00:00:00.000Z'),
+        createdAt: new Date('2026-04-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-04-01T00:00:00.000Z'),
+        deletedAt: null,
+      };
+    },
+    create(input: Record<string, unknown>) {
+      return input;
+    },
+    async save(input: Record<string, unknown>) {
+      savedSnapshots.push({ ...input });
+      return input;
+    },
+    async delete() {
+      throw new Error('should not delete existing device');
+    },
+    async softDelete() {
+      return;
+    },
+    async count() {
+      return 0;
+    },
+  });
+
+  (service as any).deviceIdentityService = {
+    async provisionOnDeviceCreated(input: Record<string, unknown>) {
+      provisionCalls += 1;
+      assert.equal(input.provider, 'emqx');
+      return { ok: true, vendor: 'emqx', thingName: '01h0000000000000000000310' };
+    },
+  };
+
+  const result = await service.execute({
+    operation: 'admin.devices.create',
+    body: { deviceSn: 'SN-EMQX-UPGRADE', name: 'emqx-device' },
+    tenantScope: '01h0000000000000000000011',
+    requestId: '01h0000000000000000000104',
+  });
+
+  assert.equal(provisionCalls, 1);
+  assert.equal(savedSnapshots.length, 1);
+  assert.equal(savedSnapshots[0]?.provider, 'emqx');
+  assert.equal(savedSnapshots[0]?.status, 'active');
+  assert.equal(savedSnapshots[0]?.name, 'emqx-device');
+  assert.equal((result as Record<string, any>).provider, 'emqx');
+  assert.equal((result as Record<string, any>).iotProvision?.vendor, 'emqx');
 });
 
 test('admin.devices.provision triggers IoT credential provisioning when local credential is missing', async () => {
@@ -291,7 +379,7 @@ test('admin.devices.provision triggers IoT credential provisioning when local cr
         calls.push(input);
         return { ok: true, vendor: 'emqx', status: 'active' };
       },
-      async rotateDeviceCertificate() {
+      async rotateDeviceCredential() {
         throw new Error('should not rotate');
       },
     } as never,
@@ -313,6 +401,11 @@ test('admin.devices.provision triggers IoT credential provisioning when local cr
 test('admin.devices.delete passes emqx vendor through cloud cleanup request', async () => {
   const now = new Date('2026-05-01T10:05:00.000Z');
   const deleteCalls: Array<Record<string, unknown>> = [];
+  const deleteRepo = {
+    async delete() {
+      return;
+    },
+  };
   const service = new DeviceApplicationService(
     {
       async findOne({ where }: { where: { id?: string; tenantId?: string } }) {
@@ -331,18 +424,22 @@ test('admin.devices.delete passes emqx vendor through cloud cleanup request', as
         }
         return null;
       },
-      async softDelete() {
+      async delete() {
         return;
       },
     } as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    { appendBinding: async () => undefined, closeActiveBinding: async () => undefined } as never,
+    deleteRepo as never,
+    deleteRepo as never,
+    deleteRepo as never,
+    deleteRepo as never,
+    deleteRepo as never,
+    deleteRepo as never,
+    deleteRepo as never,
+    {
+      appendBinding: async () => undefined,
+      closeActiveBinding: async () => undefined,
+      deleteAllBindings: async () => undefined,
+    } as never,
     {} as never,
     {} as never,
     {} as never,
@@ -367,7 +464,7 @@ test('admin.devices.delete passes emqx vendor through cloud cleanup request', as
   assert.equal(deleteCalls[0].vendor, 'emqx');
 });
 
-test('admin.devices.certificate.get falls back to latest provision record', async () => {
+test('admin.devices.credential.get returns unavailable when local credential is missing', async () => {
   const now = new Date('2026-05-01T08:00:00.000Z');
   const service = new DeviceApplicationService(
     {
@@ -399,23 +496,7 @@ test('admin.devices.certificate.get falls back to latest provision record', asyn
     } as never,
     {} as never,
     {} as never,
-    {
-      async findOne() {
-        return {
-          status: 'created',
-          vendor: 'aws',
-          requestPayloadJson: { desiredThingName: 'thing-1001' },
-          responsePayloadJson: {
-            certificateArn: 'arn:aws:iot:ap-southeast-1:123:cert/abc',
-            certificatePem: '-----BEGIN CERTIFICATE-----\nabc\n-----END CERTIFICATE-----',
-            endpoint: 'a1b2c3d4.iot.ap-southeast-1.amazonaws.com',
-            region: 'ap-southeast-1',
-          },
-          createdAt: now,
-          updatedAt: now,
-        };
-      },
-    } as never,
+    {} as never,
     {} as never,
     {} as never,
     {} as never,
@@ -431,16 +512,16 @@ test('admin.devices.certificate.get falls back to latest provision record', asyn
   );
 
   const result = await service.execute<Record<string, unknown>>({
-    operation: 'admin.devices.certificate.get',
+    operation: 'admin.devices.credential.get',
     params: { id: '01h0000000000000000000301' },
     tenantScope: '01h0000000000000000000011',
     requestId: '01h0000000000000000000104',
   });
 
-  assert.equal(result.available, true);
-  assert.equal(result.source, 'iot_provision_records');
-  assert.equal(result.thingName, 'thing-1001');
-  assert.equal(result.certificateArn, 'arn:aws:iot:ap-southeast-1:123:cert/abc');
+  assert.equal(result.available, false);
+  assert.equal(result.source, 'unavailable');
+  assert.equal(result.thingName, null);
+  assert.equal(result.certificateArn, null);
 });
 
 test('internal.devices.applyAttrResult does not update shadow when result failed', async () => {
@@ -512,7 +593,7 @@ test('internal.devices.applyAttrResult does not update shadow when result failed
   assert.equal(statusLogCount, 1);
 });
 
-test('admin.devices.certificate.download decrypts stored secrets and returns archive payload', async () => {
+test('admin.devices.credential.download decrypts stored secrets and returns archive payload', async () => {
   const previousKey = process.env.AES_KEY;
   process.env.AES_KEY =
     '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
@@ -593,7 +674,7 @@ test('admin.devices.certificate.download decrypts stored secrets and returns arc
     );
 
     const detail = await service.execute<Record<string, unknown>>({
-      operation: 'admin.devices.certificate.get',
+      operation: 'admin.devices.credential.get',
       params: { id: '01h0000000000000000000401' },
       tenantScope: '01h0000000000000000000011',
       requestId: '01h0000000000000000000105',
@@ -602,13 +683,13 @@ test('admin.devices.certificate.download decrypts stored secrets and returns arc
     assert.equal('privateKeyPem' in detail, false);
 
     const result = await service.execute<Record<string, unknown>>({
-      operation: 'admin.devices.certificate.download',
+      operation: 'admin.devices.credential.download',
       params: { id: '01h0000000000000000000401' },
       tenantScope: '01h0000000000000000000011',
       requestId: '01h0000000000000000000106',
     });
 
-    assert.equal(result.fileName, 'SN-2001-certificate-package.tar.gz');
+    assert.equal(result.fileName, 'SN-2001-credential-package.tar.gz');
     const archiveBuffer = gunzipSync(Buffer.from(String(result.contentBase64), 'base64'));
     const archiveText = archiveBuffer.toString('utf8');
     assert.equal(archiveText.includes(certificatePem), true);
@@ -617,7 +698,7 @@ test('admin.devices.certificate.download decrypts stored secrets and returns arc
     assert.equal(archiveText.includes('-----BEGIN CERTIFICATE-----'), true);
 
     const claimedDetail = await service.execute<Record<string, unknown>>({
-      operation: 'admin.devices.certificate.get',
+      operation: 'admin.devices.credential.get',
       params: { id: '01h0000000000000000000401' },
       tenantScope: '01h0000000000000000000011',
       requestId: '01h0000000000000000000107',
@@ -632,12 +713,12 @@ test('admin.devices.certificate.download decrypts stored secrets and returns arc
     await assert.rejects(
       () =>
         service.execute({
-          operation: 'admin.devices.certificate.download',
+          operation: 'admin.devices.credential.download',
           params: { id: '01h0000000000000000000401' },
           tenantScope: '01h0000000000000000000011',
           requestId: '01h0000000000000000000108',
         }),
-      /certificate secret already claimed/,
+      /device credential secret already claimed/,
     );
   } finally {
     if (previousKey === undefined) {
@@ -648,125 +729,99 @@ test('admin.devices.certificate.download decrypts stored secrets and returns arc
   }
 });
 
-test('admin.devices.certificate.download returns aliyun device secret package and claim payload', async () => {
-  const previousKey = process.env.AES_KEY;
-  process.env.AES_KEY =
-    '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
-  const now = new Date('2026-05-01T10:00:00.000Z');
-  const deviceSecret = 'aliyun-secret-001';
-  try {
-    const storedCredential: Record<string, unknown> = {
-      tenantId: '01h0000000000000000000011',
-      deviceId: '01h0000000000000000000402',
-      vendor: 'aliyun',
-      credentialType: 'certificate',
-      credentialId: 'iot-id-2002',
-      thingName: '01h0000000000000000000402',
-      certificateArn: null,
-      certificatePem: null,
-      privateKeyPem: encryptDeviceCredentialSecret(deviceSecret),
-      endpoint: 'https://iot.cn-shanghai.aliyuncs.com',
-      region: 'cn-shanghai',
-      fingerprint: 'fp-aliyun',
-      status: 'active',
-      issuedAt: now,
-      expiresAt: null,
-      metadataJson: { productKey: 'pk-2002' },
-      updatedAt: now,
-    };
-    const service = new DeviceApplicationService(
-      {
-        async findOne({ where }: { where: { id?: string; tenantId?: string } }) {
-          if (
-            where.id === '01h0000000000000000000402'
-            && where.tenantId === '01h0000000000000000000011'
-          ) {
-            return {
-              id: '01h0000000000000000000402',
-              tenantId: '01h0000000000000000000011',
-              deviceSn: 'SN-ALIYUN-2002',
-              productKey: 'pk-2002',
-              provider: 'aliyun',
-              status: 'active',
-              onlineStatus: 'online',
-              createdAt: now,
-              updatedAt: now,
-            };
-          }
-          return null;
-        },
-      } as never,
-      {} as never,
-      {
-        async findOne() {
-          return storedCredential;
-        },
-        async save(input: Record<string, unknown>) {
-          Object.assign(storedCredential, input);
-          return storedCredential;
-        },
-      } as never,
-      {} as never,
-      {} as never,
-      {
-        async findOne() {
-          return null;
-        },
-      } as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {
-        async provisionOnDeviceCreated() {
-          return { ok: true };
-        },
-      } as never,
-    );
+test('publishCommandDownlink marks command accepted when bridge queues delivery', async () => {
+  const service = createService({
+    async findOne() {
+      return null;
+    },
+  });
+  const accepted: string[] = [];
 
-    const detail = await service.execute<Record<string, unknown>>({
-      operation: 'admin.devices.certificate.get',
-      params: { id: '01h0000000000000000000402' },
-      tenantScope: '01h0000000000000000000011',
-      requestId: '01h0000000000000000000201',
-    });
-    assert.equal(detail.vendor, 'aliyun');
-    assert.equal(detail.hasDeviceSecret, true);
-    assert.equal(detail.certificatePem, null);
-    assert.equal('privateKeyPem' in detail, false);
+  (service as any).iotDownlinkService = {
+    async publish() {
+      return {
+        topic: 'v1/cmd/SN-001/res',
+        requestId: 'cmd-001',
+        delivery: 'queued',
+      };
+    },
+  };
+  (service as any).deviceCommandService = {
+    async markCommandAccepted(commandId: string) {
+      accepted.push(commandId);
+    },
+    async markCommandSent() {
+      throw new Error('should not mark sent');
+    },
+    async markCommandFailed() {
+      throw new Error('should not mark failed');
+    },
+  };
 
-    const result = await service.execute<Record<string, unknown>>({
-      operation: 'admin.devices.certificate.download',
-      params: { id: '01h0000000000000000000402' },
-      tenantScope: '01h0000000000000000000011',
-      requestId: '01h0000000000000000000202',
-    });
-    assert.equal(result.fileName, 'SN-ALIYUN-2002-device-secret-package.tar.gz');
-    const archiveBuffer = gunzipSync(Buffer.from(String(result.contentBase64), 'base64'));
-    const archiveText = archiveBuffer.toString('utf8');
-    assert.equal(archiveText.includes('DEVICE_SECRET=aliyun-secret-001'), true);
-    assert.equal(archiveText.includes('PRODUCT_KEY=pk-2002'), true);
+  await (service as any).publishCommandDownlink(
+    {
+      id: 'device-001',
+      deviceSn: 'SN-001',
+      tenantId: 'tenant-001',
+      provider: 'emqx',
+    },
+    {
+      id: 'cmd-001',
+      commandType: 'cmd.reboot',
+      payloadJson: { force: true },
+    },
+  );
 
-    const claim = await service.execute<Record<string, unknown>>({
-      operation: 'admin.devices.certificate.get',
-      params: { id: '01h0000000000000000000402' },
-      tenantScope: '01h0000000000000000000011',
-      requestId: '01h0000000000000000000203',
-    });
-    assert.equal(claim.downloadAvailable, false);
-  } finally {
-    if (previousKey === undefined) {
-      delete process.env.AES_KEY;
-    } else {
-      process.env.AES_KEY = previousKey;
-    }
-  }
+  assert.deepEqual(accepted, ['cmd-001']);
 });
 
-test('admin.devices.certificate.download returns emqx certificate package with custom root ca', async () => {
+test('publishCommandDownlink marks command sent when device publish succeeds', async () => {
+  const service = createService({
+    async findOne() {
+      return null;
+    },
+  });
+  const sent: string[] = [];
+
+  (service as any).iotDownlinkService = {
+    async publish() {
+      return {
+        topic: 'v1/cmd/SN-001/res',
+        requestId: 'cmd-002',
+        delivery: 'sent',
+      };
+    },
+  };
+  (service as any).deviceCommandService = {
+    async markCommandAccepted() {
+      throw new Error('should not mark accepted');
+    },
+    async markCommandSent(commandId: string) {
+      sent.push(commandId);
+    },
+    async markCommandFailed() {
+      throw new Error('should not mark failed');
+    },
+  };
+
+  await (service as any).publishCommandDownlink(
+    {
+      id: 'device-001',
+      deviceSn: 'SN-001',
+      tenantId: 'tenant-001',
+      provider: 'emqx',
+    },
+    {
+      id: 'cmd-002',
+      commandType: 'cmd.reboot',
+      payloadJson: { force: true },
+    },
+  );
+
+  assert.deepEqual(sent, ['cmd-002']);
+});
+
+test('admin.devices.credential.download returns emqx credential package with custom root ca', async () => {
   const previousKey = process.env.AES_KEY;
   process.env.AES_KEY =
     '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
@@ -848,13 +903,13 @@ test('admin.devices.certificate.download returns emqx certificate package with c
     );
 
     const result = await service.execute<Record<string, unknown>>({
-      operation: 'admin.devices.certificate.download',
+      operation: 'admin.devices.credential.download',
       params: { id: '01h0000000000000000000403' },
       tenantScope: '01h0000000000000000000011',
       requestId: '01h0000000000000000000302',
     });
 
-    assert.equal(result.fileName, 'SN-EMQX-2003-emqx-certificate-package.tar.gz');
+    assert.equal(result.fileName, 'SN-EMQX-2003-emqx-credential-package.tar.gz');
     const archiveBuffer = gunzipSync(Buffer.from(String(result.contentBase64), 'base64'));
     const archiveText = archiveBuffer.toString('utf8');
     assert.equal(archiveText.includes(certificatePem), true);
